@@ -34,28 +34,6 @@ gui.DisplayOrder = 5
 gui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 gui.Parent = playerGui
 
-local function makeEdge(size, position, rotation)
-	local f = Instance.new("Frame")
-	f.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	f.BorderSizePixel = 0
-	f.Size = size
-	f.Position = position
-	f.ZIndex = 1
-	f.Parent = gui
-	local grad = Instance.new("UIGradient")
-	grad.Rotation = rotation
-	grad.Transparency = NumberSequence.new({
-		NumberSequenceKeypoint.new(0, 0.28),
-		NumberSequenceKeypoint.new(0.5, 0.84),
-		NumberSequenceKeypoint.new(1, 1),
-	})
-	grad.Parent = f
-end
-makeEdge(UDim2.new(1, 0, 0.24, 0), UDim2.fromScale(0, 0), 90)
-makeEdge(UDim2.new(1, 0, 0.24, 0), UDim2.fromScale(0, 0.76), 270)
-makeEdge(UDim2.new(0.16, 0, 1, 0), UDim2.fromScale(0, 0), 0)
-makeEdge(UDim2.new(0.16, 0, 1, 0), UDim2.fromScale(0.84, 0), 180)
-
 local dot = Instance.new("Frame")
 dot.Name = "Crosshair"
 dot.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -115,6 +93,8 @@ hint.TextColor3 = Color3.fromRGB(218, 205, 180)
 hint.TextTransparency = 0.25
 hint.Text = "WASD  MOVE        SHIFT  RUN        CTRL  CROUCH        E  INTERACT"
 hint.ZIndex = 4
+-- The key list means nothing on a phone; the touch buttons label themselves.
+hint.Visible = not touch
 hint.Parent = gui
 task.delay(8, function()
 	TweenService:Create(hint, TweenInfo.new(2), { TextTransparency = 1 }):Play()
@@ -315,6 +295,9 @@ local roll = 0
 local fov = BASE_FOV
 local sprinting = false
 local moving = false
+-- Kept separately because the transparencies it drives use different ranges,
+-- so it can't be read back from any one of them.
+local hudFade = 0
 
 local function onCharacterAdded(char)
 	character = char
@@ -364,6 +347,63 @@ UserInputService.InputEnded:Connect(function(input)
 	end
 end)
 
+-- ================= TOUCH CONTROLS =================
+-- Holding a button would pin the thumb that steers the camera, so on touch
+-- sprint and crouch are toggles instead.
+local sprintButton
+local crouchButton
+
+local function makeTouchButton(name, label, position)
+	local b = Instance.new("TextButton")
+	b.Name = name
+	b.AnchorPoint = Vector2.new(0.5, 0.5)
+	b.Position = position
+	b.Size = UDim2.fromOffset(64, 64)
+	b.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
+	b.BackgroundTransparency = 0.35
+	b.BorderSizePixel = 0
+	b.AutoButtonColor = false
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 11
+	b.TextColor3 = Color3.fromRGB(222, 202, 160)
+	b.Text = label
+	b.ZIndex = 6
+	b.Parent = gui
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(1, 0)
+	corner.Parent = b
+	local stroke = Instance.new("UIStroke")
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Color = Color3.fromRGB(160, 132, 74)
+	stroke.Thickness = 1.5
+	stroke.Transparency = 0.35
+	stroke.Parent = b
+	return b
+end
+
+local function paintTouchButton(b, active)
+	b.BackgroundColor3 = active and Color3.fromRGB(146, 120, 66) or Color3.fromRGB(10, 10, 12)
+	b.TextColor3 = active and Color3.fromRGB(16, 14, 10) or Color3.fromRGB(222, 202, 160)
+end
+
+if touch then
+	sprintButton = makeTouchButton("SprintButton", "RUN", UDim2.new(1, -78, 1, -150))
+	crouchButton = makeTouchButton("CrouchButton", "CROUCH", UDim2.new(1, -158, 1, -96))
+
+	sprintButton.Activated:Connect(function()
+		sprintHeld = not sprintHeld
+		if sprintHeld then
+			crouchHeld = false
+		end
+	end)
+	crouchButton.Activated:Connect(function()
+		crouchHeld = not crouchHeld
+		if crouchHeld then
+			sprintHeld = false
+		end
+	end)
+end
+
 RunService.RenderStepped:Connect(function(dt)
 	if not humanoid or humanoid.Health <= 0 then
 		return
@@ -389,6 +429,10 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 	if exhausted and stamina > 25 then
 		exhausted = false
+	end
+	-- A toggled sprint would otherwise resume on its own once stamina recovers.
+	if touch and exhausted then
+		sprintHeld = false
 	end
 
 	local speedFactor = moving and (sprinting and 1.5 or (crouchHeld and 0.55 or 1)) or 0
@@ -424,12 +468,16 @@ RunService.RenderStepped:Connect(function(dt)
 	staminaFill.Size = UDim2.new(frac, 0, 1, 0)
 	staminaFill.BackgroundColor3 = exhausted and Color3.fromRGB(160, 58, 48) or Color3.fromRGB(224, 214, 192)
 	local fade = (stamina > 99 and not sprintHeld and staminaDelay <= 0) and 1 or 0
-	local current = 1 - staminaBg.BackgroundTransparency
-	current += (fade - current) * math.min(dt * 4, 1)
-	staminaBg.BackgroundTransparency = 0.55 + 0.42 * current
-	staminaFill.BackgroundTransparency = 0.12 + 0.7 * current
-	sbStroke.Transparency = 0.55 + 0.45 * current
-	dot.BackgroundTransparency = 0.55 + 0.35 * current
+	hudFade += (fade - hudFade) * math.min(dt * 4, 1)
+	staminaBg.BackgroundTransparency = 0.55 + 0.42 * hudFade
+	staminaFill.BackgroundTransparency = 0.12 + 0.7 * hudFade
+	sbStroke.Transparency = 0.55 + 0.45 * hudFade
+	dot.BackgroundTransparency = 0.55 + 0.35 * hudFade
+
+	if touch then
+		paintTouchButton(sprintButton, sprintHeld)
+		paintTouchButton(crouchButton, crouchHeld)
+	end
 
 	if currentPrompt then
 		updatePromptText()
