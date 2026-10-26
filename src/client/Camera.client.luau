@@ -13,6 +13,15 @@ local WALK_SPEED = 10.2
 local SPRINT_SPEED = 18.5
 local CROUCH_SPEED = 5.6
 local BASE_FOV = 72
+-- How fast the view catches up to the mouse. Lower trails further behind;
+-- around 30+ feels close to the raw default camera.
+local LOOK_SMOOTHING = 20
+-- Furthest the view may trail the mouse, in degrees, so fast spins stay tight.
+local MAX_LOOK_LAG = 12
+-- Degrees of roll per degree the view trails the mouse; turning left leans right.
+local TURN_LEAN = 0.12
+-- Studs the camera pushes forward while sprinting, easing back after you stop.
+local SPRINT_FORWARD = 0.6
 
 local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
@@ -227,9 +236,21 @@ local exhausted = false
 local sprintHeld = false
 local crouchHeld = false
 local bobPhase = 0
+-- Eased toward the movement state so bob and shake fade in and out instead
+-- of popping when you start, stop or begin sprinting.
+local bobAmount = 0
+local shakeAmount = 0
 local crouchOffset = 0
 local roll = 0
+-- Rotation the default camera chose this frame, before smoothing.
+local targetCFrame
+-- Yaw is tracked unwrapped (it keeps counting past 360) so smoothing never
+-- takes the short way round against a fast spin.
+local targetYaw
+local smoothYaw
+local smoothPitch
 local fov = BASE_FOV
+local sprintForward = 0
 local sprinting = false
 local moving = false
 -- Kept separately because the transparencies it drives use different ranges,
@@ -250,8 +271,14 @@ local function onCharacterAdded(char)
 	exhausted = false
 	crouchOffset = 0
 	bobPhase = 0
+	bobAmount = 0
+	shakeAmount = 0
 	roll = 0
+	targetCFrame = nil
+	targetYaw = nil
 	fov = BASE_FOV
+	sprintForward = 0
+	sprinting = false
 	player.CameraMode = Enum.CameraMode.LockFirstPerson
 	camera.FieldOfView = BASE_FOV
 end
@@ -371,13 +398,15 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 
 	local speedFactor = moving and (sprinting and 1.5 or (crouchHeld and 0.55 or 1)) or 0
+	bobAmount += (speedFactor - bobAmount) * math.min(dt * 6, 1)
 	bobPhase += dt * (sprinting and 12.5 or 9) * (moving and 1 or 0)
-	local bobY = math.sin(bobPhase * 2) * 0.055 * speedFactor
-	local bobX = math.cos(bobPhase) * 0.045 * speedFactor
+	local bobY = math.sin(bobPhase * 2) * 0.055 * bobAmount
+	local bobX = math.cos(bobPhase) * 0.045 * bobAmount
 	local breath = math.sin(os.clock() * 1.25) * 0.009
 	local targetCrouch = crouchHeld and -1.55 or 0
 	crouchOffset += (targetCrouch - crouchOffset) * math.min(dt * 8, 1)
-	humanoid.CameraOffset = Vector3.new(bobX, bobY + breath + crouchOffset, 0)
+	sprintForward += ((sprinting and SPRINT_FORWARD or 0) - sprintForward) * math.min(dt * 4, 1)
+	humanoid.CameraOffset = Vector3.new(bobX, bobY + breath + crouchOffset, -sprintForward)
 
 	local targetFov = BASE_FOV + (sprinting and 7 or 0) + (crouchHeld and -3 or 0) + (exhausted and 1.5 or 0)
 	fov += (targetFov - fov) * math.min(dt * 6, 1)
@@ -403,16 +432,47 @@ RunService.RenderStepped:Connect(function(dt)
 	end
 end)
 
+-- The default camera turns from whatever camera.CFrame was last frame, so it
+-- has to see its own unsmoothed result again. Otherwise the smoothing lag
+-- would swallow mouse input instead of easing it.
+RunService:BindToRenderStep("HotelCameraRestore", Enum.RenderPriority.Camera.Value - 1, function()
+	if targetCFrame then
+		camera.CFrame = targetCFrame
+	end
+end)
+
 RunService:BindToRenderStep("HotelCameraFX", Enum.RenderPriority.Camera.Value + 1, function(dt)
 	if not humanoid or humanoid.Health <= 0 then
+		-- Hand the camera back untouched, or the restore step would freeze it.
+		targetCFrame = nil
+		targetYaw = nil
 		return
 	end
-	local lateral = humanoid.MoveDirection:Dot(camera.CFrame.RightVector)
+	targetCFrame = camera.CFrame
+	local pitch, yaw = targetCFrame:ToEulerAnglesYXZ()
+	if targetYaw then
+		-- Wrap only the per-frame step, which is always well under half a turn.
+		targetYaw += (yaw - targetYaw + math.pi) % (2 * math.pi) - math.pi
+		local alpha = 1 - math.exp(-LOOK_SMOOTHING * dt)
+		local maxLag = math.rad(MAX_LOOK_LAG)
+		smoothYaw += (targetYaw - smoothYaw) * alpha
+		smoothYaw = math.clamp(smoothYaw, targetYaw - maxLag, targetYaw + maxLag)
+		smoothPitch += (pitch - smoothPitch) * alpha
+		smoothPitch = math.clamp(smoothPitch, pitch - maxLag, pitch + maxLag)
+	else
+		targetYaw = yaw
+		smoothYaw = yaw
+		smoothPitch = pitch
+	end
+	local smoothRotation = CFrame.fromEulerAnglesYXZ(smoothPitch, smoothYaw, 0)
+
+	local lateral = humanoid.MoveDirection:Dot(targetCFrame.RightVector)
 	local targetRoll = -lateral * (sprinting and 2.0 or (crouchHeld and 0.7 or 1.1))
 	roll += (targetRoll - roll) * math.min(dt * 6, 1)
-	local shake = 0
-	if sprinting then
-		shake = math.noise(os.clock() * 14, 0) * 0.1
-	end
-	camera.CFrame = camera.CFrame * CFrame.Angles(math.rad(shake), 0, math.rad(roll))
+	shakeAmount += ((sprinting and 1 or 0) - shakeAmount) * math.min(dt * 5, 1)
+	local shake = math.noise(os.clock() * 14, 0) * 0.1 * shakeAmount
+	local turnLean = -math.deg(targetYaw - smoothYaw) * TURN_LEAN
+	camera.CFrame = CFrame.new(targetCFrame.Position)
+		* smoothRotation
+		* CFrame.Angles(math.rad(shake), 0, math.rad(roll + turnLean))
 end)
