@@ -1,5 +1,5 @@
--- Material-aware footsteps for every character, not just ours: replacing
--- RbxCharacterSounds removes the default steps for other players too.
+-- Material-aware footsteps for every character, not just ours, since the
+-- default "Running" sound is silenced on all of them.
 
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
@@ -147,7 +147,35 @@ local function playStep(state, root, group, speed)
 	s:Play()
 end
 
+-- With SoundService.CharacterSoundsUseNewApi the engine plays this sound
+-- itself, so an RbxCharacterSounds override can't stop it; pin it silent.
+local function silence(sound)
+	sound.Volume = 0
+	sound:GetPropertyChangedSignal("Volume"):Connect(function()
+		if sound.Volume ~= 0 then
+			sound.Volume = 0
+		end
+	end)
+end
+
+local function silenceDefaultSteps(character)
+	local root = character:WaitForChild("HumanoidRootPart", 10)
+	if not root then
+		return
+	end
+	local running = root:FindFirstChild("Running")
+	if running and running:IsA("Sound") then
+		silence(running)
+	end
+	root.ChildAdded:Connect(function(child)
+		if child.Name == "Running" and child:IsA("Sound") then
+			silence(child)
+		end
+	end)
+end
+
 local function track(character)
+	task.spawn(silenceDefaultSteps, character)
 	tracked[character] = { distance = 0, lastIndex = 0, primed = true }
 	character.AncestryChanged:Connect(function(_, parent)
 		if not parent then

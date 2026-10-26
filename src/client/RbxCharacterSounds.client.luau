@@ -1,2 +1,0 @@
--- Intentionally empty. A LocalScript with this name in StarterPlayerScripts
--- replaces Roblox's default character sounds; Footsteps handles steps instead.
