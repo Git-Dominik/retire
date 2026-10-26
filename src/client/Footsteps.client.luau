@@ -79,7 +79,7 @@ local STRIDE_PER_SPEED = 0.16
 -- Distance before the first step after stopping. Not zero, or tiny nudges
 -- and physics jitter each fire a step.
 local FIRST_STEP_DISTANCE = 2.5
-local BASE_VOLUME = 0.3
+local BASE_VOLUME = 0.12
 local PITCH_JITTER = 0.08
 local ROLLOFF_MIN = 6
 local ROLLOFF_MAX = 60
