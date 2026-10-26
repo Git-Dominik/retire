@@ -1,0 +1,8 @@
+# Tools managed by Rokit. Run `rokit install` after cloning.
+
+[tools]
+rojo = "rojo-rbx/rojo@7.6.1"
+stylua = "johnnymorganz/stylua@2.4.1"
+selene = "kampfkarren/selene@0.30.1"
+luau-lsp = "JohnnyMorganz/luau-lsp@1.66.0"
+lune = "lune-org/lune@0.10.4"
