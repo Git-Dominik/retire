@@ -1,13 +1,13 @@
 # Notes for agents
 
-Roblox game synced into Studio with Rojo (see README for setup and layout). These
-are the things that aren't obvious from the code.
+Roblox game synced into Studio with Rojo (see README for setup and layout).
+Only what isn't obvious from the code is listed here.
 
 ## Ground rules from the owner
 
-- Keep changes scoped to what was asked. When working in one area (for example,
-  the shop), don't change anything outside it. Leave layout, models and lighting
-  alone unless asked.
+- Keep changes scoped to what was asked. Working in one area (say, the shop)
+  means changing nothing outside it. Leave layout, models and lighting alone
+  unless asked.
 - Anchor every part you create.
 - Don't commit unless asked. Commit messages use short imperative subjects, like
   the existing history.
@@ -16,8 +16,7 @@ are the things that aren't obvious from the code.
 
 - StyLua (`stylua.toml`: tabs, 100 columns) and selene (`std = "roblox"`). Run
   them only on the files you changed. StyLua re-wraps untouched lines in files
-  that were not formatted with it (Journal.client is one), which makes noisy
-  diffs.
+  it never formatted (Journal.client is one), making noisy diffs.
 - Every script opens with a plain-prose comment block. It says what the script
   does, who owns the state, and which attributes, tags and remotes it relies on.
   Keep that block current when behaviour changes. Inline comments explain *why*,
@@ -25,9 +24,9 @@ are the things that aren't obvious from the code.
 - Tunables go in a config table at the top of the script, or in a shared
   `*Config` module when both client and server need them (see
   `src/shared/StockingConfig.luau`).
-- Animations use TweenService or exponential smoothing. The journal book and
-  the camera follow use smoothing so they react to input instantly. Match
-  whichever style the surrounding code uses.
+- Animations use TweenService or exponential smoothing (the journal book and
+  camera follow use smoothing so they react to input instantly). Match the
+  surrounding code.
 
 ## What lives only in the place file
 
@@ -139,13 +138,10 @@ Tags and attributes:
 - The box is put back when the player dies, leaves, presses Q, equips another
   tool, or opens the journal (the `ReadingJournal` player attribute).
 
-- Crouching only lowers the camera, so Arms.client lowers your own shoulders
-  to match.
-
 ### Other cross-script attributes
 
-- `CrouchOffset` (Player, local only): the camera's crouch drop.
-
+- `CrouchOffset` (Player, local only): the camera's crouch drop. Crouching only
+  lowers the camera, so Arms.client lowers your own shoulders to match.
 - `ReadingJournal` (Player): set while the journal is open. Camera.client
   holds pitch, Arms.client stops holding tools, and StockingClient puts the
   box down.
