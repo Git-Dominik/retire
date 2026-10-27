@@ -1,10 +1,14 @@
--- F2 dev menu. Available to every player.
+-- F2 dev menu. Available to every player. Everything goes through the server's
+-- ElevatorDev remote (Elevator.server), including spawning a stock item at your feet
+-- by its ItemId or name from Shared.StockItems.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
+
+local StockItems = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("StockItems"))
 
 local devRemote = ReplicatedStorage:WaitForChild("ElevatorDev")
 local elevator = workspace:WaitForChild("Elevator")
@@ -101,7 +105,55 @@ end)
 button("Descend (skip item)", 5, function()
 	devRemote:FireServer("Descend")
 end)
-label("F2 to hide", 6, Enum.Font.Gotham, 11, Color3.fromRGB(110, 104, 92))
+-- Matches an ItemId or display name, ignoring case and spaces ("reimu", "Ring box").
+local function findItem(text)
+	local wanted = text:lower():gsub("%s", "")
+	for _, id in StockItems.ids() do
+		local def = StockItems.get(id)
+		if id:lower() == wanted or def.name:lower():gsub("%s", "") == wanted then
+			return id
+		end
+	end
+	for _, id in StockItems.ids() do
+		if wanted ~= "" and id:lower():find(wanted, 1, true) then
+			return id
+		end
+	end
+	return nil
+end
+
+local spawnBox = Instance.new("TextBox")
+spawnBox.LayoutOrder = 6
+spawnBox.Size = UDim2.new(1, 0, 0, 30)
+spawnBox.BackgroundColor3 = Color3.fromRGB(24, 22, 18)
+spawnBox.BorderSizePixel = 0
+spawnBox.ClearTextOnFocus = false
+spawnBox.Font = Enum.Font.Gotham
+spawnBox.TextSize = 12
+spawnBox.TextColor3 = Color3.fromRGB(222, 202, 160)
+spawnBox.PlaceholderColor3 = Color3.fromRGB(110, 104, 92)
+spawnBox.PlaceholderText = "Spawn item (Enter)"
+spawnBox.Text = ""
+spawnBox.Parent = panel
+local spawnCorner = Instance.new("UICorner")
+spawnCorner.CornerRadius = UDim.new(0, 4)
+spawnCorner.Parent = spawnBox
+local spawnStatus = label("", 7, Enum.Font.Gotham, 11, Color3.fromRGB(168, 158, 138))
+
+spawnBox.FocusLost:Connect(function(enterPressed)
+	if not enterPressed or spawnBox.Text == "" then
+		return
+	end
+	local id = findItem(spawnBox.Text)
+	if id then
+		devRemote:FireServer("SpawnItem", id)
+		spawnStatus.Text = "Spawned " .. StockItems.get(id).name
+	else
+		spawnStatus.Text = 'No item "' .. spawnBox.Text .. '"'
+	end
+end)
+
+label("F2 to hide", 8, Enum.Font.Gotham, 11, Color3.fromRGB(110, 104, 92))
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then

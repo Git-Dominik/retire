@@ -191,6 +191,12 @@ local function placeItem(room, itemDef, surface, rng)
 	return item
 end
 
+-- A loose copy of an item resting on surface, for the dev menu's spawner.
+function Levels.placeItem(parent, id, surface)
+	local itemDef = StockItems.get(id)
+	return itemDef and placeItem(parent, itemDef, surface, Random.new())
+end
+
 -- base: floor-level CFrame at the centre of the elevator's outer door face, facing into the room.
 -- Returns the room model, the item part to be carried back, and the item's name.
 function Levels.build(level, base)
