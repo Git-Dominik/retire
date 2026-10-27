@@ -5,7 +5,9 @@
 -- doors shut -> the room outside is swapped during a short "ride" -> doors open on the
 -- chosen floor. "STORE" on the selector brings the elevator back up to the lobby.
 -- Scavenged items go home through the cargo lift (Cargo.server).
+-- Each floor's item carries the ScavengeItem tag.
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
@@ -485,6 +487,8 @@ local function buildLevel()
 	prompt.RequiresLineOfSight = false
 	prompt.Parent = roomItem
 	prompt.Triggered:Connect(giveItem)
+	-- Journal.client points its world arrow at tagged items.
+	CollectionService:AddTag(roomItem, "ScavengeItem")
 
 	room.Parent = workspace
 end

@@ -5,9 +5,15 @@
 -- reading, only the view's up/down angle is held (Camera.client).
 -- Everything moves with the same exponential smoothing as the camera and
 -- movement (no tweens), so it chases its target the instant input changes.
--- The camera tilt lives in Camera.client, which watches the ReadingJournal
+-- The second page is a to-do list for the current phase of the game (see TASKS
+-- below): each line is ticked off as the state other scripts publish changes.
+-- The current to-do step also gets a bobbing arrow over its object in the world
+-- (the elevator's floor selector, floor item, cargo lift car and send button). Until you
+-- take it, the lobby book carries a bobbing arrow marker (built here,
+-- so it disappears for you alone). The camera tilt lives in Camera.client, which watches the ReadingJournal
 -- attribute this script sets on the local player.
 
+local CollectionService = game:GetService("CollectionService")
 local ContextActionService = game:GetService("ContextActionService")
 local Lighting = game:GetService("Lighting")
 local Players = game:GetService("Players")
@@ -64,6 +70,7 @@ local TAB_COLORS = {
 -- Placeholder entries; two pages per spread, left then right.
 local PAGES = {
 	{ title = "Property of", body = "\n—\n\n\nIf found, do not return it to the elevator." },
+	{ title = "To do", tasks = true },
 	{
 		title = "Day 1",
 		body = "The lift was waiting with its doors open, as if it knew I was coming. Warm light, a gramophone, a smell of old velvet. Someone had set a place for me.",
@@ -90,6 +97,269 @@ local PAGES = {
 	},
 	{ body = "\n\n\n\n(the rest of the pages are blank)" },
 }
+
+-- ================= TO-DO LIST =================
+-- Tasks are grouped by phase. The phase is the workspace attribute "Phase"
+-- ("Night" when unset), so a day cycle only has to set it. Each `done` reads
+-- state other scripts already publish; a task stays ticked for the rest of its
+-- phase even if that state resets (the cargo value drops to 0 after a send).
+local DEFAULT_PHASE = "Night"
+local CHECK_INK = "#701e1a"
+
+local function carryingScavenged()
+	local backpack = player:FindFirstChildOfClass("Backpack")
+	for _, container in { backpack, player.Character } do
+		if container then
+			for _, child in container:GetChildren() do
+				if child:IsA("Tool") and child:GetAttribute("ScavengedLevel") then
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+local function liftAttribute(name)
+	local elevator = workspace:FindFirstChild("Elevator")
+	local lift = elevator and elevator:FindFirstChild("CargoLift")
+	return lift and lift:GetAttribute(name) or 0
+end
+
+-- Markers need a BasePart to hang from; fixtures may be parts or models.
+local function basePartOf(instance)
+	if not instance then
+		return nil
+	end
+	if instance:IsA("BasePart") then
+		return instance
+	end
+	if instance:IsA("Model") then
+		return instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart", true)
+	end
+	return nil
+end
+
+local function elevatorChild(...)
+	local instance = workspace:FindFirstChild("Elevator")
+	for _, name in { ... } do
+		instance = instance and instance:FindFirstChild(name)
+	end
+	return instance
+end
+
+local function holdingBox()
+	for _, box in CollectionService:GetTagged("StockBox") do
+		if box:GetAttribute("HeldBy") == player.UserId then
+			return true
+		end
+	end
+	return false
+end
+
+-- True once every piece of furniture is full (and there is some).
+local function shopStocked()
+	local furniture = CollectionService:GetTagged("StockFurniture")
+	for _, model in furniture do
+		if (model:GetAttribute("FreeSlots") or 0) > 0 then
+			return false
+		end
+	end
+	return #furniture > 0
+end
+
+local TASKS = {
+	Night = {
+		{
+			id = "descend",
+			text = "Ride the elevator down",
+			target = function()
+				return elevatorChild("FloorSelector")
+			end,
+			done = function()
+				local elevator = workspace:FindFirstChild("Elevator")
+				return elevator ~= nil and (elevator:GetAttribute("Level") or 0) >= 1
+			end,
+		},
+		{
+			id = "scavenge",
+			text = "Find something worth keeping",
+			-- Elevator.server tags each floor's item.
+			target = function()
+				for _, item in CollectionService:GetTagged("ScavengeItem") do
+					if item.Transparency == 0 then
+						return item
+					end
+				end
+				return nil
+			end,
+			done = function()
+				return carryingScavenged() or liftAttribute("CargoValue") > 0 or liftAttribute("SendSeq") > 0
+			end,
+		},
+		{
+			id = "load",
+			text = "Load it onto the cargo lift",
+			target = function()
+				return elevatorChild("CargoLift", "Car")
+			end,
+			done = function()
+				return liftAttribute("CargoValue") > 0 or liftAttribute("SendSeq") > 0
+			end,
+		},
+		{
+			id = "send",
+			text = "Send the lift up to the shop",
+			target = function()
+				return elevatorChild("CargoLift", "SendButton")
+			end,
+			done = function()
+				return liftAttribute("SendSeq") > 0
+			end,
+		},
+	},
+	-- Nothing sets this phase yet; it's here for when the pawn shop opens by day.
+	Day = {
+		{
+			id = "box",
+			text = "Take a box from the racks",
+			done = holdingBox,
+			target = function()
+				for _, box in CollectionService:GetTagged("StockBox") do
+					if box:GetAttribute("HeldBy") == 0 then
+						return box
+					end
+				end
+				return nil
+			end,
+		},
+		{
+			id = "stock",
+			text = "Stock the shelves and cases",
+			done = shopStocked,
+			target = function()
+				for _, model in CollectionService:GetTagged("StockFurniture") do
+					if (model:GetAttribute("FreeSlots") or 0) > 0 then
+						return model
+					end
+				end
+				return nil
+			end,
+		},
+	},
+}
+
+local taskPhase
+local doneSet = {}
+
+-- Latches finished tasks and returns the phase's task list plus the first
+-- unfinished one. Runs from the marker loop, so ticks don't depend on the book
+-- being open.
+local function evaluateTasks()
+	local phase = workspace:GetAttribute("Phase") or DEFAULT_PHASE
+	if phase ~= taskPhase then
+		taskPhase = phase
+		doneSet = {}
+	end
+	local list = TASKS[phase] or {}
+	local current
+	for _, task in list do
+		if not doneSet[task.id] and task.done() then
+			doneSet[task.id] = true
+		end
+		if not doneSet[task.id] and not current then
+			current = task
+		end
+	end
+	return list, current
+end
+
+local function tasksText()
+	local lines = {}
+	for _, task in (evaluateTasks()) do
+		-- Done lines get a red-inked X in the box and struck-through text. Plain ASCII,
+		-- since the handwriting font has no glyph for the crossed-box characters.
+		table.insert(
+			lines,
+			doneSet[task.id] and `[<font color="{CHECK_INK}"><b>X</b></font>]  <s>{task.text}</s>`
+				or `[  ]  {task.text}`
+		)
+	end
+	return table.concat(lines, "\n\n")
+end
+
+-- ================= WORLD MARKERS =================
+-- A gold arrow bobbing over an object, with a caption. Built on the client, so
+-- each player sees their own. The arrow rides a looping tween; the caption stays put.
+local function makeMarker(name, captionText)
+	local marker = Instance.new("BillboardGui")
+	marker.Name = name
+	marker.Size = UDim2.fromOffset(160, 80)
+	marker.AlwaysOnTop = true
+	marker.MaxDistance = 80
+	marker.ResetOnSpawn = false
+	marker.Enabled = false
+	marker.Parent = player:WaitForChild("PlayerGui")
+
+	local arrow = Instance.new("TextLabel")
+	arrow.Position = UDim2.fromOffset(0, 8)
+	arrow.Size = UDim2.new(1, 0, 0, 44)
+	arrow.BackgroundTransparency = 1
+	arrow.Font = Enum.Font.GothamBold
+	arrow.Text = "▼"
+	arrow.TextSize = 40
+	arrow.TextColor3 = Color3.fromRGB(226, 184, 96)
+	arrow.TextStrokeTransparency = 0.4
+	arrow.Parent = marker
+
+	local caption = Instance.new("TextLabel")
+	caption.Name = "Caption"
+	caption.Position = UDim2.fromOffset(0, 46)
+	caption.Size = UDim2.new(1, 0, 0, 22)
+	caption.BackgroundTransparency = 1
+	caption.Font = Enum.Font.GothamBold
+	caption.Text = captionText
+	caption.TextSize = 14
+	caption.TextColor3 = Color3.fromRGB(240, 226, 196)
+	caption.TextStrokeTransparency = 0.4
+	caption.Parent = marker
+
+	local tween = TweenService:Create(
+		arrow,
+		TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
+		{ Position = UDim2.fromOffset(0, -6) }
+	)
+	tween:Play()
+	return marker, tween
+end
+
+-- Points at the current task's target. Hidden until the journal is taken (the
+-- pickup arrow covers that), and while the book is open.
+task.spawn(function()
+	local marker = makeMarker("TaskMarker", "")
+	while true do
+		local _, current = evaluateTasks()
+		local target = current and current.target and current.target()
+		-- Targets are parts or models; hang the arrow from a part, a little above the top.
+		local anchor = basePartOf(target)
+		local show = anchor ~= nil
+			and player:GetAttribute("HasJournal") == true
+			and not player:GetAttribute("ReadingJournal")
+		if show then
+			local center, size = anchor.Position, anchor.Size
+			if target:IsA("Model") then
+				local cf
+				cf, size = target:GetBoundingBox()
+				center = cf.Position
+			end
+			marker.Adornee = anchor
+			marker.StudsOffsetWorldSpace = center - anchor.Position + Vector3.new(0, size.Y / 2 + 2, 0)
+			marker.Caption.Text = current.text
+		end
+		marker.Enabled = show
+		task.wait(0.25)
+	end
+end)
 
 -- ================= BOOK MODEL =================
 local function part(parent, name, size, color, material)
@@ -143,6 +413,7 @@ local function label(gui, name, font, size, color)
 	l.TextSize = size
 	l.TextColor3 = color
 	l.TextWrapped = true
+	l.RichText = true
 	l.TextXAlignment = Enum.TextXAlignment.Left
 	l.TextYAlignment = Enum.TextYAlignment.Top
 	l.Parent = gui
@@ -241,7 +512,7 @@ end
 local function setPage(gui, index)
 	local page = PAGES[index]
 	gui.Title.Text = page and page.title or ""
-	gui.Body.Text = page and page.body or ""
+	gui.Body.Text = page and (page.tasks and tasksText() or page.body) or ""
 	gui.Rule.Visible = page ~= nil and page.title ~= nil
 	gui.Number.Text = page and `— {index} —` or ""
 end
@@ -390,6 +661,7 @@ local closeSounded = false
 local spread = 0
 local spreadCount = math.ceil(#PAGES / 2)
 local inputBound = false
+local refreshTimer = 0
 
 local function approach(value, goal, rate, dt)
 	return value + (goal - value) * (1 - math.exp(-rate * dt))
@@ -443,6 +715,13 @@ end
 RunService:BindToRenderStep("JournalBook", Enum.RenderPriority.Camera.Value + 10, function(dt)
 	if not book.Parent then
 		return
+	end
+
+	-- Keeps the to-do ticks current while the book lies open on them.
+	refreshTimer += dt
+	if refreshTimer > 0.25 and state == "open" and not flipping then
+		refreshTimer = 0
+		showSpread()
 	end
 
 	raise = approach(raise, targetRaise, RAISE_RATE, dt)
@@ -609,7 +888,22 @@ end)
 
 -- ================= PICKUP =================
 -- Everyone takes their own copy, so once you have yours the lobby book disappears for you only.
+local markerTween
+
+local function removeMarker()
+	if markerTween then
+		markerTween:Cancel()
+		markerTween = nil
+	end
+	local playerGui = player:FindFirstChildOfClass("PlayerGui")
+	local marker = playerGui and playerGui:FindFirstChild("JournalMarker")
+	if marker then
+		marker:Destroy()
+	end
+end
+
 local function hideLobbyBook()
+	removeMarker()
 	local stand = workspace:FindFirstChild("JournalStand")
 	local lobbyBook = stand and stand:FindFirstChild("Journal")
 	if not lobbyBook then
@@ -640,3 +934,18 @@ player:GetAttributeChangedSignal("HasJournal"):Connect(onHasJournal)
 if player:GetAttribute("HasJournal") then
 	hideLobbyBook()
 end
+
+-- The marker above the lobby book (see makeMarker), so it's obvious
+-- what to walk up to. The stand is built by the server and may stream in late.
+task.spawn(function()
+	local stand = workspace:WaitForChild("JournalStand")
+	local cover = stand:WaitForChild("Journal"):WaitForChild("Cover")
+	if player:GetAttribute("HasJournal") then
+		return
+	end
+	local marker, tween = makeMarker("JournalMarker", "Take the journal")
+	marker.Adornee = cover
+	marker.StudsOffsetWorldSpace = Vector3.new(0, 2.2, 0)
+	marker.Enabled = true
+	markerTween = tween
+end)
