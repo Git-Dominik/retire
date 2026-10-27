@@ -41,6 +41,9 @@ recording (`ChangeHistoryService:TryBeginRecording`):
   furniture (see below).
 - `VolumetricBeam` tags, and the EmployeeRoom `Hinge` / `OpenAngle` /
   `SwingTime` / `Partner` attributes.
+- `Elevator.FloorSelector`: the floor-selector pedestal, saved in its *raised*
+  pose. Never give another model the name `Elevator`; scripts look it up with
+  `WaitForChild("Elevator")`.
 
 Before deleting or rebuilding anything in the place, look at what's there.
 Parts have gone missing before (the employee-room window wall) and had to be
@@ -83,6 +86,15 @@ rebuilt from transcript data.
   the output after adding a sound.
 - **Picking a model's main part:** go by surface area, not volume. By volume
   you get kick plates and trim.
+- **Playtest testing:**
+  - A playtest started right after `UpdateSourceAsync` can still run the old
+    code. Check for something new (a remote, an attribute) before you trust a
+    result.
+  - Moving an *anchored* character with `PivotTo` on the client doesn't
+    replicate. The server still sees the old position and rejects prompts by
+    distance, so unanchor the character first.
+- **Fonts:** `rbxasset://fonts/families/Garamond.json` fails to load. Use
+  `Font.fromEnum(Enum.Font.Garamond)` and set the weight on that.
 
 ## Systems and their contracts
 
@@ -137,6 +149,38 @@ Tags and attributes:
   4. Set `grip = D:Inverse() * G`.
 - The box is put back when the player dies, leaves, presses Q, equips another
   tool, or opens the journal (the `ReadingJournal` player attribute).
+
+### Elevator and floor selector (Elevator.server / FloorSelector.client)
+
+- The elevator never moves. During a ride the room outside the doors is
+  swapped. `travel(target)` goes to any floor 0–8, where 0 is the store (lobby).
+  - While the elevator is down, the `Grocery Store` model is parked in
+    ServerStorage and the lobby spawn is hidden.
+  - Arriving back at 0 restores both.
+- The elevator only leaves once someone has sent a floor from the selector and
+  everyone is aboard. That includes the lobby: there is no auto-descend.
+- The server owns the state, as attributes on `FloorSelector`:
+  - `Selected`: 0 = STORE, 1–8.
+  - `Sent`: the lever has been pulled.
+  - `SendSeq`: bumped on each pull, so clients play the lever and bell.
+  - `Busy`: the elevator is riding.
+  - `Locked`: on a floor until `CargoLift.SendSeq` bumps. It isn't set when
+    no cargo trips are left, or it would never unlock.
+- Turning the dial:
+  - E is the knob's prompt and turns right, to a deeper floor.
+  - Q is the knob prompt's `AltKey` and turns left. It goes through the
+    `SelectorTurn` remote, which checks the player's distance.
+  - The dial clamps at both ends and skips the current floor.
+- The lever's prompt sends the selected floor (hold 0.5s).
+- FloorSelector.client does all the motion, locally for each player:
+  - It rises within 4.5 studs and sinks past 5.5. The owner wants it close.
+  - It stays buried while `Locked`, `Busy`, or `Sent` (after the lever throw).
+  - Each moving group (Pedestal, Head, Pointer, Lever, LeafL, LeafR) is posed
+    from an invisible pivot part, using offsets recorded from the built pose.
+  - The server never writes prompt `Enabled`; the client owns it.
+- **Prompt `AltKey` attribute:** Camera.client draws a second key badge left
+  of the prompt's own key, and gives it the same click and press. The prompt's
+  script has to handle that key itself.
 
 ### Other cross-script attributes
 
