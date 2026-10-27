@@ -8,43 +8,48 @@
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- value is what the item pawns for (dollars). Floors also spawn these, cheap ones
--- far more often than dear ones (see Levels).
+-- far more often than dear ones (see Levels). basePrice is what it sells for in the
+-- shop: customers haggle around it (CounterService) and shoplifters cost it.
 local ITEMS = {
-	Camera = { name = "Camera", model = "Camera", value = 140 },
+	Camera = { name = "Camera", model = "Camera", value = 140, basePrice = 210 },
 	PocketWatch = {
 		name = "Pocket watch",
 		model = "PocketWatch",
 		value = 180,
+		basePrice = 270,
 		rotation = CFrame.Angles(0, math.rad(25), 0),
 	},
-	MusicBox = { name = "Music box", model = "MusicBox", value = 90 },
-	Radio = { name = "Radio", model = "Radio", value = 220 },
-	Clock = { name = "Mantel clock", model = "Clock", value = 200 },
-	Vase = { name = "Vase", model = "Vase", value = 45 },
-	Bottle = { name = "Bottle", model = "Bottle", value = 15 },
-	Candlestick = { name = "Candlestick", model = "Candlestick", value = 25 },
-	Figurine = { name = "Figurine", model = "Figurine", value = 30 },
+	MusicBox = { name = "Music box", model = "MusicBox", value = 90, basePrice = 135 },
+	Radio = { name = "Radio", model = "Radio", value = 220, basePrice = 330 },
+	Clock = { name = "Mantel clock", model = "Clock", value = 200, basePrice = 300 },
+	Vase = { name = "Vase", model = "Vase", value = 45, basePrice = 70 },
+	Bottle = { name = "Bottle", model = "Bottle", value = 15, basePrice = 25 },
+	Candlestick = { name = "Candlestick", model = "Candlestick", value = 25, basePrice = 40 },
+	Figurine = { name = "Figurine", model = "Figurine", value = 30, basePrice = 45 },
 	Compass = {
 		name = "Compass",
 		model = "Compass",
 		value = 60,
+		basePrice = 90,
 		rotation = CFrame.Angles(0, math.rad(-15), 0),
 	},
-	RingBox = { name = "Ring box", model = "RingBox", value = 350 },
+	RingBox = { name = "Ring box", model = "RingBox", value = 350, basePrice = 525 },
 	Wristwatch = {
 		name = "Wristwatch",
 		model = "Wristwatch",
 		value = 160,
+		basePrice = 240,
 		rotation = CFrame.Angles(0, math.rad(90), 0),
 	},
-	Lighter = { name = "Lighter", model = "Lighter", value = 12 },
+	Lighter = { name = "Lighter", model = "Lighter", value = 12, basePrice = 20 },
 	Pendant = {
 		name = "Pendant",
 		model = "Pendant",
 		value = 80,
+		basePrice = 120,
 		rotation = CFrame.Angles(0, math.rad(-20), 0),
 	},
-	Reimu = { name = "Reimu fumo", model = "Reimu", value = 120 },
+	Reimu = { name = "Reimu fumo", model = "Reimu", value = 120, basePrice = 180 },
 }
 
 local StockItems = {}
@@ -52,6 +57,7 @@ local StockItems = {}
 for id, item in ITEMS do
 	item.id = id
 	item.rotation = item.rotation or CFrame.identity
+	item.basePrice = item.basePrice or item.value
 end
 
 -- The definition for an ItemId, or nil if there's no such item.
