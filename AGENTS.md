@@ -109,6 +109,10 @@ recording (`ChangeHistoryService:TryBeginRecording`):
     from the street. Teleports (elevator arrival, respawn) stay silent.
   - `ElevatorStoreBack` is an older, doorless copy of the elevator. It has to
     keep that name.
+  - `ElevatorEntrance`: the hotel-style surround on the storage room's back
+    wall (wood pilasters, brass frame, a floor dial parked on STORE). Its
+    `Call Panel` model holds the `Call Plate` prompt and `Status Light`, which
+    Elevator.server finds by name, so keep those names.
 
 Before deleting or rebuilding anything in the place, look at what's there.
 Parts have gone missing before (the employee-room window wall) and had to be
