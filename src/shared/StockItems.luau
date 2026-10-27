@@ -1,4 +1,4 @@
--- Everything a stock box can hold. Each entry's model lives in
+-- Every item the floors spawn and the shop can stock. Each entry's model lives in
 -- ReplicatedStorage.StockItems (pivot at the bottom centre, front facing along
 -- the pivot's LookVector). A slot's front faces out of its furniture, so the
 -- item ends up at slot.CFrame * rotation.

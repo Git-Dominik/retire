@@ -1,4 +1,5 @@
 local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -99,6 +100,61 @@ staminaFill.Parent = staminaBg
 local sfCorner = Instance.new("UICorner")
 sfCorner.CornerRadius = UDim.new(0, 3)
 sfCorner.Parent = staminaFill
+
+-- Bind overview above the stamina bar, in the journal hint's style. It lists the
+-- binds that apply right now: Backspace drops a held shop or scavenged item
+-- (StockingService's DropItem remote).
+local DROP_KEY = Enum.KeyCode.Backspace
+
+local binds = Instance.new("TextLabel")
+binds.Name = "Binds"
+binds.AnchorPoint = Vector2.new(0.5, 1)
+binds.Position = UDim2.new(0.5, 0, 1, -58)
+binds.Size = UDim2.fromOffset(560, 24)
+binds.BackgroundTransparency = 1
+binds.Font = Enum.Font.GothamBold
+binds.TextSize = 12
+binds.TextColor3 = Color3.fromRGB(222, 202, 160)
+binds.TextTransparency = 1
+binds.TextStrokeTransparency = 1
+binds.ZIndex = 4
+binds.Parent = gui
+
+local function heldDroppable()
+	local tool = player.Character and player.Character:FindFirstChildOfClass("Tool")
+	if tool and (tool:GetAttribute("ShopItem") or tool:GetAttribute("ScavengedLevel")) then
+		return tool
+	end
+	return nil
+end
+
+local bindsShown = false
+local bindsTween
+local function refreshBinds()
+	local text = heldDroppable() and not touch and "BACKSPACE   drop" or nil
+	local shown = text ~= nil and not player:GetAttribute("ReadingJournal")
+	binds.Text = text or binds.Text
+	if shown == bindsShown then
+		return
+	end
+	bindsShown = shown
+	if bindsTween then
+		bindsTween:Cancel()
+	end
+	bindsTween = TweenService:Create(binds, TweenInfo.new(0.3), { TextTransparency = shown and 0.1 or 1, TextStrokeTransparency = shown and 0.6 or 1 })
+	bindsTween:Play()
+end
+
+local function watchBindsCharacter(character)
+	character.ChildAdded:Connect(refreshBinds)
+	character.ChildRemoved:Connect(refreshBinds)
+	refreshBinds()
+end
+player.CharacterAdded:Connect(watchBindsCharacter)
+if player.Character then
+	watchBindsCharacter(player.Character)
+end
+player:GetAttributeChangedSignal("ReadingJournal"):Connect(refreshBinds)
 
 -- ================= PROMPT UI =================
 -- The prompt sits on the object itself: a cartoon hand tapping at it with the key
@@ -458,6 +514,11 @@ UserInputService.InputBegan:Connect(function(input, gameProcessed)
 		sprintHeld = true
 	elseif key == Enum.KeyCode.LeftControl or key == Enum.KeyCode.RightControl or key == Enum.KeyCode.C then
 		crouchHeld = true
+	elseif key == DROP_KEY and heldDroppable() then
+		local dropRemote = ReplicatedStorage:FindFirstChild("DropItem")
+		if dropRemote then
+			dropRemote:FireServer()
+		end
 	end
 end)
 

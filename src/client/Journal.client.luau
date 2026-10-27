@@ -121,13 +121,9 @@ local function elevatorChild(...)
 	return instance
 end
 
-local function holdingBox()
-	for _, box in CollectionService:GetTagged("StockBox") do
-		if box:GetAttribute("HeldBy") == player.UserId then
-			return true
-		end
-	end
-	return false
+local function holdingShopItem()
+	local tool = player.Character and player.Character:FindFirstChildOfClass("Tool")
+	return tool ~= nil and tool:GetAttribute("ShopItem") == true
 end
 
 -- True once every piece of furniture is full (and there is some).
@@ -194,16 +190,11 @@ local TASKS = {
 	-- Nothing sets this phase yet; it's here for when the pawn shop opens by day.
 	Day = {
 		{
-			id = "box",
-			text = "Take a box from the racks",
-			done = holdingBox,
+			id = "take",
+			text = "Take an item from the racks",
+			done = holdingShopItem,
 			target = function()
-				for _, box in CollectionService:GetTagged("StockBox") do
-					if box:GetAttribute("HeldBy") == 0 then
-						return box
-					end
-				end
-				return nil
+				return CollectionService:GetTagged("RackItem")[1]
 			end,
 		},
 		{

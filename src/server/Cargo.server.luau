@@ -1,5 +1,6 @@
 -- The cargo lift built into the elevator's back wall. Players load scavenged items onto
--- its car and press the send button; the car carries them up to the crate in the store.
+-- its car and press the send button; the car carries them up to the storage racks in
+-- the store (StockRacks), where they can be taken off and stocked in the shop.
 -- Only MAX_TRIPS trips are allowed per run.
 --
 -- This script owns the rules and the items. Everything that moves or makes a sound is
@@ -15,6 +16,8 @@
 
 local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
+
+local StockRacks = require(script.Parent:WaitForChild("StockRacks"))
 
 local MAX_TRIPS = 3
 local TIMING = {
@@ -127,34 +130,16 @@ loadPrompt.Triggered:Connect(function(player)
 end)
 
 -- ================= DELIVERY =================
-local function findStore()
-	return workspace:FindFirstChild("Grocery Store") or ServerStorage:FindFirstChild("Grocery Store")
-end
-
--- Items land in the store's cargo crate, filling it in rows and then stacking up.
--- With no crate around they're kept in ServerStorage so nothing is lost.
-local delivered = 0
+-- Items land on the storage racks in the store (StockRacks). With every rack full
+-- they're kept in ServerStorage so nothing is lost.
 local function deliver(item)
-	local store = findStore()
-	local drop = store and store:FindFirstChild("CargoDrop", true)
-	if not drop then
-		local folder = ServerStorage:FindFirstChild("DeliveredCargo") or Instance.new("Folder")
-		folder.Name = "DeliveredCargo"
-		folder.Parent = ServerStorage
-		item.Parent = folder
+	if StockRacks.place(item) then
 		return
 	end
-	local COLS, ROWS = 3, 2
-	local perLayer = COLS * ROWS
-	local layer = delivered // perLayer
-	local index = delivered % perLayer
-	local col, row = index % COLS, index // COLS
-	local x = (col - (COLS - 1) / 2) * drop.Size.X / COLS
-	local z = (row - (ROWS - 1) / 2) * drop.Size.Z / ROWS
-	local surface = drop.CFrame * CFrame.new(x, drop.Size.Y / 2 + layer * 0.6, z)
-	restOn(item, surface * CFrame.Angles(0, math.rad(math.random(0, 359)), 0))
-	item.Parent = drop.Parent
-	delivered += 1
+	local folder = ServerStorage:FindFirstChild("DeliveredCargo") or Instance.new("Folder")
+	folder.Name = "DeliveredCargo"
+	folder.Parent = ServerStorage
+	item.Parent = folder
 end
 
 local function send()
@@ -173,7 +158,10 @@ local function send()
 	for _, item in cargo do
 		local owner = Players:GetPlayerByUserId(item:GetAttribute("Owner") or 0)
 		if owner then
-			owner:SetAttribute("Money", (owner:GetAttribute("Money") or 0) + (item:GetAttribute("Value") or 0))
+			owner:SetAttribute(
+				"Money",
+				(owner:GetAttribute("Money") or 0) + (item:GetAttribute("Value") or 0)
+			)
 		end
 		deliver(item)
 	end
