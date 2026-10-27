@@ -109,6 +109,17 @@ recording (`ChangeHistoryService:TryBeginRecording`):
     from the street. Teleports (elevator arrival, respawn) stay silent.
   - `ElevatorStoreBack` is an older, doorless copy of the elevator. It has to
     keep that name.
+  - `StorageRacks` in the elevator room: the shelves StockRacks fills.
+  - The `SwingDoor` models (the golden pair into the storage room), with an
+    `OpenAngle` attribute, swung by SwingDoors.client. It only pushes them for
+    players, so customers walk through them shut.
+  - The customers' helper parts, all invisible and anchored: `CustomerSpawn`
+    (street), `CounterSpot_1` / `CounterSpot_2` (on the Service Counter) and
+    `CustomerQueue`. CustomerUtil rebuilds any that are missing from the
+    store's geometry. The `StaffZone` / `StorageZone` parts keep customers out
+    of the back rooms.
+  - The three papers on the break room's cork board, tagged `ShopNote` with a
+    `Shows` attribute (`Day`, `Quota`, `Money`). ShopHUD writes on them.
 
 Before deleting or rebuilding anything in the place, look at what's there.
 Parts have gone missing before (the employee-room window wall) and had to be
@@ -205,43 +216,39 @@ rebuilt from transcript data.
 - The held pose tilts by camera pitch × 0.6 about the right shoulder,
   (1, 0.563, 0) in torso space.
 
-### Stocking (StockingService / StockingClient / StockItems / StockingConfig)
+### Stocking (StockingService / StockingClient / StockRacks / StockItems / StockingConfig)
 
-The server is authoritative. Clients only play visuals and decide which
-prompts *they* see. Everything goes through the `ReplicatedStorage.Stocking`
-RemoteEvent:
+The server is authoritative. StockingClient only decides which Stock prompts
+*this* player sees. There are no boxes and no placement animation.
 
-- Server → client: `Hold`, `Place`, `Close`, `Release`, `Reject`.
-- Client → server: `PutDown`.
-
-Tags and attributes:
+- Cargo.server hands delivered items to `StockRacks` (a server module), which
+  puts each on a free spot of a shelf board in `ElevatorRoom.StorageRacks`
+  (`SPOTS_PER_SHELF` per board) and tags it `RackItem`. If every rack is full,
+  items go to `ServerStorage.DeliveredCargo`.
+- A rack item's Take prompt gives the player a Tool (Handle = a copy of the
+  item, attributes `ShopItem`, `ItemId`). If the tool is lost without being
+  stocked (death, leaving), the item goes back on a rack.
+- A furniture's Stock prompt shows while you hold a `ShopItem` tool and the
+  furniture has `FreeSlots`. It places the item in the next free slot at once.
 
 | Tag | On | Attributes |
 | --- | --- | --- |
-| `StockBox` | The main `Box` part of a rack box | `ItemId` (a key in StockItems), `Count`, `Capacity`; the server sets `HeldBy` (UserId, 0 if free) |
+| `RackItem` | An item part on a storage rack (set by StockRacks) | `ItemId`, `Value`, `RestOffset` |
 | `StockFurniture` | The furniture Model | the server sets `FreeSlots` |
-| *(none)* | `StockSlot` parts under the furniture | `Occupied`, `SlotIndex`, `SlotSize` (Vector3) |
+| `StockSlot` | Invisible slot parts under the furniture | `Occupied`, `SlotIndex`, `SlotSize` (Vector3) |
 
 - To add an item:
   1. Add a template Model to `ReplicatedStorage.StockItems`.
   2. Add an entry to `ITEMS` in `StockItems.luau`, with an optional
      `rotation`.
 - `StockItems.create` scales items down to fit the slot.
-- The held box is a server-built Tool:
-  - It's always `BOX_HELD_SIZE`, whatever the rack box's size.
-  - Its floor is the Handle.
-  - Its flaps hang on `FlapHinge` welds, which clients tween.
-- **`BOX_GRIP` is calibrated, not hand-written.** If you change
-  `BOX_HOLD_CENTER`, `BOX_HELD_SIZE`, `BOX_HAND_GAP` or `BOX_HAND_DROP`, refit
-  it in a playtest:
-  1. Set Grip to identity.
-  2. Measure the handle frame G in torso space.
-  3. Build the desired floor frame D:
-     `CFrame.new(S) * Angles(pitch) * CFrame.new(-S) * CFrame.new(CENTER) * Angles(20°) * CFrame.new(0, -h/2 + WALL/2, 0)`,
-     where S is the right shoulder and `WALL = 0.035`.
-  4. Set `grip = D:Inverse() * G`.
-- The box is put back when the player dies, leaves, presses Q, equips another
-  tool, or opens the journal (the `ReadingJournal` player attribute).
+- Backspace (Camera.client → the `DropItem` remote) drops a held shop item or
+  scavenged item in front of the player. The server sets the tool's `DropAt`
+  and destroys it, and whoever built the tool puts the item down there.
+  Dropped shop items are tagged `DroppedItem` and can be taken again.
+- Each item has a `value` (what the cargo lift pays the player) and a
+  `basePrice` (what it sells for in the shop; customers haggle around it).
+- The F2 dev menu spawns any item at your feet by ItemId or name.
 
 ### Elevator and floor selector (Elevator.server / FloorSelector.client)
 
@@ -290,7 +297,7 @@ Tags and attributes:
 
 - The lift fills the centre bay of the elevator's back wall. Players load
   scavenged tools onto its car, and the send button carries them up to the
-  store's `CargoCrate`.
+  store's storage racks (StockRacks).
 - Each run gets `MAX_TRIPS` (3) trips.
 - Cargo.server owns the rules. CargoLift.client does all the motion and sound
   locally; server-side `PivotTo` looked choppy. It reads these attributes:
@@ -307,6 +314,57 @@ Tags and attributes:
   (the `landing()` helper).
 - Look parts up by name, not `PrimaryPart`. Team Create once dropped 23
   PrimaryPart refs.
+
+### Shop day (DayNightService / CustomerService / CounterService / QuotaService)
+
+All tunables are in `src/shared/ShopConfig.luau`. Each script's header block
+has the details; this is the part that crosses scripts.
+
+- **Clock.** DayNightService owns it and publishes an anchor on workspace:
+  `ClockAnchorTime`, `ClockAnchorHour`, `DayLength` and `ClockPaused`. Clients
+  (DayNightClient, ShopHUD) work out the hour every frame from it.
+  - To jump the clock in a test, set `ClockAnchorTime` and `ClockAnchorHour`
+    together. The server reads them back every tick.
+  - workspace `Phase` (`Day` 07:00–19:00, `Night` the rest) and `DayNumber`.
+    The PhaseChanged remote fires on each change.
+  - The server starts paused at 22:00, the night before Day 1. Day 1 dawns
+    the first time `Elevator.Level` returns to 0 (the first trip back up). To
+    fake it in a test, set `Level` above 0 and back to 0.
+  - Only the outdoor look changes: DayNightClient tweens Lighting and
+    Atmosphere between the place's saved values and ShopConfig's night tables.
+    The OPEN sign goes dark at night: its `Flicker` script is disabled and the
+    parts with a `NeonColor` attribute drop to Glass.
+  - The day count shows on the journal's first page and the cork board. Both
+    read `DayNumber`.
+- **Customers** (CustomerService, with CustomerUtil, CustomerAvatar,
+  ShoplifterService):
+  - They come by day, only while the store is in the world, the shop hasn't
+    failed, and at least one item is on the shop furniture.
+  - They only browse furniture inside `AmbienceZone` and outside the
+    `StaffZone` / `StorageZone` parts. Shelving West 3/4 sit outside the
+    building and were reachable only by walking around.
+  - Each one looks like a random friend of a player in the server. Hats are
+    stripped, so the shoplifters' grey hat is the only one. The fallback
+    presets are in ShopConfig.
+  - They're server-owned NPCs in the `Customers` collision group, which
+    doesn't collide with `Players`. Welding a carried item hands the assembly
+    to a nearby player, so `CustomerUtil.attach` re-asserts
+    `SetNetworkOwner(nil)`.
+  - Clients see the `Customer` tag in `workspace.Customers`, with the
+    `DisplayName`, `Bubble` and `BubbleMood` attributes (CustomerVisuals).
+- **Haggling** (CounterService): each `CounterSpot_<n>` gets a `NegotiatePrompt`
+  that only one player can hold at a time. ShopHUD's window talks over the
+  `Haggle` / `HaggleAction` remotes, and the server checks every action. A
+  customer's `WillingToPay` and `Patience` never leave the server.
+- **Quota** (QuotaService): ReplicatedStorage attributes `ShopMoney`,
+  `DayEarnings`, `Quota`, `DaySales`, `DayWalkouts`, `DayStolenValue`,
+  `Strikes`, `MaxStrikes` and `ShopFailed`. Nothing is saved.
+  - Three seconds after dusk the day is judged: `DaySummary` goes to every
+    client, and a missed quota is a strike.
+  - At `MaxStrikes` the `ShopFailed` remote fires and `onShopFailed()` runs.
+    It's an empty hook for the game-over screen.
+- If you're in the playtest while testing customers, the sales and haggles are
+  yours too. Check the server log before treating one as a bug.
 
 ### Other cross-script attributes
 
