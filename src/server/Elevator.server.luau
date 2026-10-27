@@ -292,6 +292,8 @@ local roomBase = floorPart.CFrame * CFrame.new(0, floorPart.Size.Y / 2, floorPar
 --   Busy      riding, so the controls are locked
 --   Locked    on a floor nothing has been sent up from yet; it stays buried until
 --             the cargo lift has made a trip (or has no trips left to make)
+--   Raised    it's up, decided here so every player sees the same thing
+--   FacingUserId  the player its head turns to follow (0 for none)
 local selectorHead = selector.Pedestal.Head
 local cargoLift = elevator:WaitForChild("CargoLift")
 
@@ -341,7 +343,7 @@ local TURN_COOLDOWN = 0.45
 local lastTurn = 0
 
 local function turnDial(step)
-	if descending or selector:GetAttribute("Locked") or selector:GetAttribute("Sent") then
+	if descending or not selector:GetAttribute("Raised") or selector:GetAttribute("Sent") then
 		return
 	end
 	if os.clock() - lastTurn < TURN_COOLDOWN then
@@ -377,10 +379,12 @@ turnRemote.OnServerEvent:Connect(function(player)
 	end
 end)
 
+local sentAt = 0
 sendPrompt.Triggered:Connect(function()
-	if descending or selector:GetAttribute("Locked") or selector:GetAttribute("Selected") == level then
+	if descending or not selector:GetAttribute("Raised") or selector:GetAttribute("Selected") == level then
 		return
 	end
+	sentAt = os.clock()
 	selector:SetAttribute("Sent", true)
 	selector:SetAttribute("SendSeq", selector:GetAttribute("SendSeq") + 1)
 end)
@@ -628,6 +632,43 @@ task.spawn(function()
 			boardedSince = nil
 			travel(selector:GetAttribute("Selected"))
 		end
+	end
+end)
+
+-- The floor selector comes up while anyone aboard is within RAISE_RANGE of its
+-- hatch, and goes down once nobody is within LOWER_RANGE. It also stays down on a
+-- floor until the cargo lift has gone up (Locked), and from a little after a send
+-- (time for the lever throw) until the ride is over. Its head follows the nearest
+-- player in range. Clients animate all of it from Raised and FacingUserId.
+local SELECTOR_RAISE_RANGE = 4.5
+local SELECTOR_LOWER_RANGE = 5.5
+local SELECTOR_SEND_SINK_DELAY = 1
+
+selector:SetAttribute("Raised", false)
+selector:SetAttribute("FacingUserId", 0)
+task.spawn(function()
+	local selectorRoot = selector.Root.CFrame
+	while true do
+		task.wait(0.1)
+		local range = selector:GetAttribute("Raised") and SELECTOR_LOWER_RANGE or SELECTOR_RAISE_RANGE
+		local nearest, nearestDistance
+		for _, player in Players:GetPlayers() do
+			local character = player.Character
+			local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+			local root = character and character:FindFirstChild("HumanoidRootPart")
+			if humanoid and root and humanoid.Health > 0 and isAboard(root.Position) then
+				local offset = selectorRoot:PointToObjectSpace(root.Position)
+				local distance = Vector2.new(offset.X, offset.Z).Magnitude
+				if distance < range and (not nearestDistance or distance < nearestDistance) then
+					nearest, nearestDistance = player, distance
+				end
+			end
+		end
+		local done = selector:GetAttribute("Busy")
+			or (selector:GetAttribute("Sent") and os.clock() - sentAt > SELECTOR_SEND_SINK_DELAY)
+		local up = nearest ~= nil and not selector:GetAttribute("Locked") and not done
+		selector:SetAttribute("Raised", up)
+		selector:SetAttribute("FacingUserId", up and nearest.UserId or 0)
 	end
 end)
 

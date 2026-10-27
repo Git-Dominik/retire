@@ -1,9 +1,10 @@
--- The floor selector by the elevator door (Elevator.server keeps its state). It waits
--- buried under a floor hatch and comes up for whoever walks right up to it: the hatch leaves
--- swing open, the pedestal rises and settles, and the folded dial head flips up to face
--- the player and keeps turning to follow them. Walking away sinks it again.
--- Everything moves locally, so each player sees it rise for themselves. The model is
--- built in its raised pose; every moving group is posed from its pivot part each frame.
+-- The floor selector by the elevator door. Elevator.server keeps its state, including
+-- whether it's up (Raised) and who it faces (FacingUserId), so every player sees the
+-- same thing. This script only animates it: when it's raised, the hatch leaves swing
+-- open, the pedestal rises and settles, and the folded dial head flips up to face
+-- that player and keeps turning to follow them. Lowered, it all sinks again.
+-- The motion runs on each client, at its own frame rate. The model is built in its
+-- raised pose; every moving group is posed from its pivot part each frame.
 
 local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
@@ -12,9 +13,6 @@ local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 
--- Comes up within RAISE_RANGE of the hatch and sinks past LOWER_RANGE.
-local RAISE_RANGE = 4.5
-local LOWER_RANGE = 5.5
 local RISE_TIME = 1.3
 local SINK_TIME = 1
 -- How far down the pedestal hides: its folded top ends up under the floor.
@@ -38,9 +36,7 @@ local SOUNDS = {
 local LAMP_IDLE = Color3.fromRGB(255, 170, 80)
 local LAMP_SENT = Color3.fromRGB(120, 230, 100)
 
-local player = Players.LocalPlayer
 local elevator = workspace:WaitForChild("Elevator")
-local floorPart = elevator:WaitForChild("Shell"):WaitForChild("Floor")
 local selector = elevator:WaitForChild("FloorSelector")
 local hatch = selector:WaitForChild("Hatch")
 local pedestal = selector:WaitForChild("Pedestal")
@@ -231,20 +227,12 @@ local function leverPull()
 end
 
 -- ================= LOOP =================
--- Where the player is relative to the hatch, if they're inside the elevator and alive.
-local function playerOffset()
-	local character = player.Character
-	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+-- Where the player the server has it facing is, relative to the hatch.
+local function facingOffset()
+	local facing = Players:GetPlayerByUserId(selector:GetAttribute("FacingUserId") or 0)
+	local character = facing and facing.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
-	if not root or humanoid.Health <= 0 then
-		return nil
-	end
-	local inside = floorPart.CFrame:PointToObjectSpace(root.Position)
-	local half = floorPart.Size / 2
-	if math.abs(inside.X) > half.X or math.abs(inside.Z) > half.Z or inside.Y < 0 or inside.Y > 12 then
-		return nil
-	end
-	return rootCFrame:PointToObjectSpace(root.Position)
+	return root and rootCFrame:PointToObjectSpace(root.Position)
 end
 
 local progress = 0
@@ -255,18 +243,9 @@ local posedHidden = false
 local lampPulse = 0
 
 RunService.RenderStepped:Connect(function(dt)
-	local offset = playerOffset()
-	local distance = offset and Vector2.new(offset.X, offset.Z).Magnitude
-	-- Stays buried on a floor until something has gone up in the cargo lift, and once a
-	-- floor has been sent it goes down (after the lever's throw) until the ride is over.
-	local done = selector:GetAttribute("Busy")
-		or (selector:GetAttribute("Sent") and not pulledAt)
-	local near = distance ~= nil
-		and distance < (raised and LOWER_RANGE or RAISE_RANGE)
-		and not selector:GetAttribute("Locked")
-		and not done
-	if near ~= raised then
-		raised = near
+	local up = selector:GetAttribute("Raised") == true
+	if up ~= raised then
+		raised = up
 		if raised then
 			sounds.Hatch:Play()
 		else
@@ -287,7 +266,8 @@ RunService.RenderStepped:Connect(function(dt)
 	-- Starts swinging round to the player as it comes up through the hatch; behind it,
 	-- it just turns as far as it can.
 	local targetYaw = 0
-	if progress > 0.2 and offset and distance > 1.5 then
+	local offset = facingOffset()
+	if progress > 0.2 and offset and Vector2.new(offset.X, offset.Z).Magnitude > 1.5 then
 		targetYaw = math.clamp(math.atan2(-offset.X, -offset.Z), -MAX_YAW, MAX_YAW)
 	end
 	yaw += (targetYaw - yaw) * math.min(dt * 3, 1)
