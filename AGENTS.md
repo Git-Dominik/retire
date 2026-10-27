@@ -91,6 +91,10 @@ recording (`ChangeHistoryService:TryBeginRecording`):
   - Collaborators move the store, so don't hardcode its position.
   - A decorative model named `Radio` also exists, so never look the radio up
     by that name.
+  - `DoorTrigger`: an invisible part in the street doorway (east wall).
+    DoorBell.client rings the entrance bell (the desk-bell asset pitched up;
+    the owner rejected "Store Entry Bell 1") when a player walks through it
+    from the street. Teleports (elevator arrival, respawn) stay silent.
   - `ElevatorStoreBack` is an older, doorless copy of the elevator. It has to
     keep that name.
 
