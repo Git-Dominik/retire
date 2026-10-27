@@ -106,7 +106,7 @@ sfCorner.Parent = staminaFill
 local HAND_IMAGE = "rbxassetid://6018832212" -- "Images/hand_cursor1600" decal 6018832303, a plain silhouette
 local CREAM = Color3.fromRGB(255, 228, 196)
 local INK = Color3.fromRGB(46, 30, 22)
-local POPUP_W, POPUP_H = 210, 140
+local POPUP_W, POPUP_H = 260, 140
 -- Pixel the hand's fingertip sits at inside the popup; the popup is shifted so this
 -- point lands on the object.
 local TIP = Vector2.new(34, 8)
@@ -172,6 +172,16 @@ keyLabel.Text = "E"
 keyLabel.ZIndex = 3
 keyLabel.Parent = badge
 
+-- A prompt with an AltKey attribute (the floor selector's Q) gets a second key badge
+-- to the left of its own; the prompt's script handles that key itself.
+local BADGE_STEP = 48
+local altBadge = badge:Clone()
+altBadge.Name = "AltKey"
+altBadge.HoldFill:Destroy()
+altBadge.Visible = false
+altBadge.Parent = popupGroup
+local altKeyLabel = altBadge:FindFirstChildOfClass("TextLabel")
+
 local actionLabel = Instance.new("TextLabel")
 actionLabel.AnchorPoint = Vector2.new(0, 0.5)
 actionLabel.Position = UDim2.new(0, TIP.X + 11 + 30, 0, TIP.Y + 70 + 21)
@@ -198,6 +208,13 @@ local function updatePromptText()
 	end
 	local key = UserInputService:GetStringForKeyCode(currentPrompt.KeyboardKeyCode)
 	keyLabel.Text = key ~= "" and string.upper(key) or currentPrompt.KeyboardKeyCode.Name
+
+	local alt = currentPrompt:GetAttribute("AltKey")
+	local shift = alt and BADGE_STEP or 0
+	altBadge.Visible = alt ~= nil
+	altKeyLabel.Text = alt or ""
+	badge.Position = UDim2.fromOffset(TIP.X + 11 + shift, TIP.Y + 70)
+	actionLabel.Position = UDim2.new(0, TIP.X + 11 + 30 + shift, 0, TIP.Y + 70 + 21)
 end
 
 local function setHold(fraction, time)
@@ -260,6 +277,12 @@ interactSound.SoundId = "rbxassetid://9113817566" -- "Clothes Handling 2" (Pro S
 interactSound.Volume = 0.35
 interactSound.Parent = script
 
+-- A quick press on the key so the trigger reads.
+local function pressPopup()
+	popupScale.Scale = 0.88
+	TweenService:Create(popupScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+end
+
 ProximityPromptService.PromptTriggered:Connect(function(prompt)
 	if not prompt:GetAttribute("SkipInteractSound") then
 		SoundService:PlayLocalSound(interactSound)
@@ -268,9 +291,19 @@ ProximityPromptService.PromptTriggered:Connect(function(prompt)
 		return
 	end
 	setHold(0, 0.12)
-	-- A quick press on the key so the trigger reads.
-	popupScale.Scale = 0.88
-	TweenService:Create(popupScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+	pressPopup()
+end)
+
+-- The alt key gets the same click and press as the prompt's own key.
+UserInputService.InputBegan:Connect(function(input, processed)
+	local alt = currentPrompt and currentPrompt:GetAttribute("AltKey")
+	if processed or not alt or input.KeyCode.Name ~= alt then
+		return
+	end
+	if not currentPrompt:GetAttribute("SkipInteractSound") then
+		SoundService:PlayLocalSound(interactSound)
+	end
+	pressPopup()
 end)
 
 -- Pins the popup to the object and makes the hand tap at it.

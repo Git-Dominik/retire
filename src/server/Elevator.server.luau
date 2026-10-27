@@ -1,9 +1,9 @@
 -- Elevator ambience, the door open/close sequence, and the floor-by-floor descent.
 -- Doors move on the server so every player sees and hears the same thing.
 --
--- Loop: everyone boards -> doors shut -> the room outside is swapped during a short
--- "ride" -> doors open on the next floor. From floor 1 on, the elevator only leaves
--- once someone presses "Go down" on the button panel and everyone is back aboard.
+-- Loop: someone picks a floor on the floor selector and sends it -> everyone boards ->
+-- doors shut -> the room outside is swapped during a short "ride" -> doors open on the
+-- chosen floor. "STORE" on the selector brings the elevator back up to the lobby.
 -- Scavenged items go home through the cargo lift (Cargo.server).
 
 local Players = game:GetService("Players")
@@ -24,8 +24,11 @@ local DOOR_TIME = 2.4
 local DING_LEAD = 0.7
 -- Gap between the wooden doors and the iron gate starting to move.
 local GATE_LAG = 0.6
--- How long the ride between floors lasts once the doors are shut.
+-- How long a one-floor ride lasts once the doors are shut; each extra floor adds a
+-- little, up to a cap, so a long trip doesn't drag.
 local DESCENT_TIME = 20
+local PER_FLOOR_TIME = 3
+local MAX_RIDE_TIME = 32
 -- Everyone has to stay aboard this long before the doors close.
 local BOARD_DELAY = 2
 
@@ -35,7 +38,7 @@ local MOVE_VOLUME = 0.225
 local elevator = workspace:WaitForChild("Elevator")
 local doorsFolder = elevator:WaitForChild("Doors")
 local floorPart = elevator.PrimaryPart
-local buttonPlate = elevator.Fixtures.ButtonPlate
+local selector = elevator:WaitForChild("FloorSelector")
 
 -- ================= SOUNDS =================
 local function makeSound(parent, name, id, props)
@@ -269,8 +272,6 @@ end
 -- ================= FLOORS =================
 local level = 0
 local descending = false
--- On a floor the elevator waits for someone to press "Go down" on the button panel.
-local descendRequested = false
 local room, roomItem, roomItemName
 
 elevator:SetAttribute("Level", level)
@@ -278,22 +279,96 @@ elevator:SetAttribute("Level", level)
 -- Floor-level CFrame at the elevator's outer door face, looking out of the elevator.
 local roomBase = floorPart.CFrame * CFrame.new(0, floorPart.Size.Y / 2, floorPart.Size.Z / 2)
 
-local downPrompt = Instance.new("ProximityPrompt")
-downPrompt.Name = "DownPrompt"
-downPrompt.ActionText = "Go down"
-downPrompt.ObjectText = "Elevator"
-downPrompt.KeyboardKeyCode = Enum.KeyCode.E
-downPrompt.MaxActivationDistance = 6
-downPrompt.RequiresLineOfSight = false
-downPrompt.Enabled = false
-downPrompt.Parent = buttonPlate
+-- ================= FLOOR SELECTOR =================
+-- A telegraph-style pedestal that rises out of the floor when someone comes near
+-- (FloorSelector.client does all the moving). The knob turns the pointer through
+-- STORE (0) and floors 1..DIAL_TICKS; pulling the lever sends the elevator there
+-- once everyone is aboard. The server only keeps the choice, in attributes:
+--   Selected  floor the pointer is on
+--   Sent      the lever has been pulled for Selected
+--   SendSeq   bumped on every pull, so clients animate the lever and ring the bell
+--   Busy      riding, so the controls are locked
+--   Locked    on a floor nothing has been sent up from yet; it stays buried until
+--             the cargo lift has made a trip (or has no trips left to make)
+local selectorHead = selector.Pedestal.Head
+local cargoLift = elevator:WaitForChild("CargoLift")
 
-downPrompt.Triggered:Connect(function()
-	if descending then
+local function makeSelectorPrompt(parent, action, hold)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = action
+	prompt.ObjectText = "Floor selector"
+	prompt.KeyboardKeyCode = Enum.KeyCode.E
+	prompt.HoldDuration = hold
+	prompt.MaxActivationDistance = 6
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = parent
+	return prompt
+end
+
+local turnPrompt = makeSelectorPrompt(selectorHead.Pointer.Knob, "Turn dial", 0)
+local sendPrompt = makeSelectorPrompt(selector.Pedestal.Lever.Grip, "Send", 0.5)
+
+local function setSelected(floor)
+	selector:SetAttribute("Selected", floor)
+	selector:SetAttribute("Sent", false)
+	sendPrompt.ActionText = floor == 0 and "Return to store" or `Go to floor {floor}`
+end
+
+-- The pointer rests on the floor below the current one (see travel()).
+setSelected(1)
+selector:SetAttribute("Busy", false)
+selector:SetAttribute("SendSeq", 0)
+selector:SetAttribute("Locked", false)
+
+local function unlockSelector()
+	selector:SetAttribute("Locked", false)
+end
+cargoLift:GetAttributeChangedSignal("SendSeq"):Connect(unlockSelector)
+
+-- A run with no cargo trips left can't unlock it, so it isn't locked at all then.
+local function lockSelector()
+	selector:SetAttribute("Locked", (elevator:GetAttribute("CargoTripsLeft") or 1) > 0)
+end
+
+-- E on the knob turns the pointer right (deeper); Q, sent by FloorSelector.client
+-- through SelectorTurn since a prompt has one key, turns it left (back up). It stops
+-- at either end of the dial and steps over the floor the elevator is already on.
+local function turnDial(step)
+	if descending or selector:GetAttribute("Locked") or selector:GetAttribute("Sent") then
 		return
 	end
-	descendRequested = true
-	downPrompt.Enabled = false
+	local floor = selector:GetAttribute("Selected") + step
+	if floor == level then
+		floor += step
+	end
+	if floor >= 0 and floor <= DIAL_TICKS then
+		setSelected(floor)
+	end
+end
+
+turnPrompt:SetAttribute("AltKey", "Q")
+turnPrompt.Triggered:Connect(function()
+	turnDial(1)
+end)
+
+local turnRemote = Instance.new("RemoteEvent")
+turnRemote.Name = "SelectorTurn"
+turnRemote.Parent = ReplicatedStorage
+turnRemote.OnServerEvent:Connect(function(player)
+	-- Same reach as the prompt, so Q only works where E would.
+	local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+	local knob = selectorHead.Pointer.Knob
+	if root and (root.Position - knob.Position).Magnitude <= turnPrompt.MaxActivationDistance + 2 then
+		turnDial(-1)
+	end
+end)
+
+sendPrompt.Triggered:Connect(function()
+	if descending or selector:GetAttribute("Locked") or selector:GetAttribute("Selected") == level then
+		return
+	end
+	selector:SetAttribute("Sent", true)
+	selector:SetAttribute("SendSeq", selector:GetAttribute("SendSeq") + 1)
 end)
 
 -- ================= CALL BUTTON =================
@@ -423,56 +498,68 @@ Players.PlayerAdded:Connect(function(player)
 	player.CharacterAdded:Connect(onCharacter)
 end)
 
-local function hideLobby()
-	-- The grocery store is the lobby and sits right where the floor rooms are built,
-	-- so it's put away (not destroyed) once the elevator first leaves.
-	local store = workspace:FindFirstChild("Grocery Store")
+-- The grocery store is the lobby and sits right where the floor rooms are built,
+-- so it's put away (not destroyed) while the elevator is down, and the lobby spawn
+-- pad is hidden with it. Coming back up to the store reverses both.
+local function setLobbyShown(shown)
+	local store = shown and ServerStorage:FindFirstChild("Grocery Store") or workspace:FindFirstChild("Grocery Store")
 	if store then
-		store.Parent = ServerStorage
+		store.Parent = shown and workspace or ServerStorage
 	end
 
 	local spawn = workspace:FindFirstChild("SpawnLocation")
 	if not spawn then
 		return
 	end
-	spawn.Transparency = 1
-	spawn.CanCollide = false
+	-- Remember how it looked so it can be put back exactly.
+	if spawn:GetAttribute("ShownTransparency") == nil then
+		spawn:SetAttribute("ShownTransparency", spawn.Transparency)
+	end
+	spawn.Transparency = shown and spawn:GetAttribute("ShownTransparency") or 1
+	spawn.CanCollide = shown
 	for _, d in spawn:GetChildren() do
 		if d:IsA("Decal") then
-			d.Transparency = 1
+			d.Transparency = shown and 0 or 1
 		end
 	end
 end
 
-local function descend()
-	if descending or elevator:GetAttribute("DoorState") == "Moving" then
+local function travel(target)
+	if descending or target == level or elevator:GetAttribute("DoorState") == "Moving" then
 		return
 	end
 	descending = true
-	descendRequested = false
-	downPrompt.Enabled = false
+	selector:SetAttribute("Busy", true)
 	setDoors("Closed")
 
 	clearLevel()
 	if level == 0 then
-		hideLobby()
+		setLobbyShown(false)
 	end
+	local rideTime = math.min(DESCENT_TIME + PER_FLOOR_TIME * (math.abs(target - level) - 1), MAX_RIDE_TIME)
 	-- Clients shake the camera while this is set.
 	elevator:SetAttribute("Descending", true)
-	setDial(level + 1, DESCENT_TIME)
+	setDial(target, rideTime)
 	fade(moveSound, MOVE_VOLUME, 1.2)
 	fade(music, MUSIC_VOLUME, 2)
-	task.wait(DESCENT_TIME)
+	task.wait(rideTime)
 	elevator:SetAttribute("Descending", false)
 
-	level += 1
+	level = target
 	elevator:SetAttribute("Level", level)
-	buildLevel()
+	if level == 0 then
+		setLobbyShown(true)
+		unlockSelector()
+	else
+		buildLevel()
+		lockSelector()
+	end
+	setSelected(level < DIAL_TICKS and level + 1 or 0)
 	fade(moveSound, 0, 1.5)
 	fade(music, 0, 3)
 	setDoors("Open")
+	selector:SetAttribute("Busy", false)
 	descending = false
-	downPrompt.Enabled = true
 end
 
 local function isAboard(position)
@@ -505,7 +592,7 @@ task.spawn(function()
 		task.wait(0.25)
 		local ready = not descending
 			and elevator:GetAttribute("DoorState") == "Open"
-			and (level == 0 or descendRequested)
+			and selector:GetAttribute("Sent")
 			and everyoneAboard()
 		if not ready then
 			boardedSince = nil
@@ -513,7 +600,7 @@ task.spawn(function()
 			boardedSince = os.clock()
 		elseif os.clock() - boardedSince >= BOARD_DELAY then
 			boardedSince = nil
-			descend()
+			travel(selector:GetAttribute("Selected"))
 		end
 	end
 end)
@@ -532,6 +619,6 @@ devRemote.OnServerEvent:Connect(function(_player, action)
 	elseif action == "Open" then
 		setDoors("Open")
 	elseif action == "Descend" then
-		descend()
+		travel(level + 1)
 	end
 end)
