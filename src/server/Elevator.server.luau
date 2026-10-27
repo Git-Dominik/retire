@@ -333,8 +333,16 @@ end
 -- E on the knob turns the pointer right (deeper); Q, sent by FloorSelector.client
 -- through SelectorTurn since a prompt has one key, turns it left (back up). It stops
 -- at either end of the dial and steps over the floor the elevator is already on.
+-- One detent at a time: a turn is ignored until the last one's click (0.42s) has
+-- finished, so mashing Q/E can't stack the sounds.
+local TURN_COOLDOWN = 0.45
+local lastTurn = 0
+
 local function turnDial(step)
 	if descending or selector:GetAttribute("Locked") or selector:GetAttribute("Sent") then
+		return
+	end
+	if os.clock() - lastTurn < TURN_COOLDOWN then
 		return
 	end
 	local floor = selector:GetAttribute("Selected") + step
@@ -342,11 +350,15 @@ local function turnDial(step)
 		floor += step
 	end
 	if floor >= 0 and floor <= DIAL_TICKS then
+		lastTurn = os.clock()
 		setSelected(floor)
 	end
 end
 
 turnPrompt:SetAttribute("AltKey", "Q")
+-- The dial's own detent click is the feedback; the generic interact click on top of
+-- it would still stack when the keys are mashed.
+turnPrompt:SetAttribute("SkipInteractSound", true)
 turnPrompt.Triggered:Connect(function()
 	turnDial(1)
 end)

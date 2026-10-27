@@ -3,6 +3,17 @@
 Roblox game synced into Studio with Rojo (see README for setup and layout).
 Only what isn't obvious from the code is listed here.
 
+## The game
+
+- The player runs a pawn shop: the `Grocery Store` model, which is also the
+  lobby. Shop and pawn features belong in the store.
+- The hotel-style elevator at the store's back is only transport. It descends
+  to floors where players scavenge items, and the cargo lift sends those items
+  up to the store. The owner rejected a pawn counter or merchant inside the
+  elevator.
+- The art direction is a warm, dark old hotel: atmospheric, slightly cartoonish
+  but serious.
+
 ## Ground rules from the owner
 
 - Keep changes scoped to what was asked. Working in one area (say, the shop)
@@ -11,6 +22,33 @@ Only what isn't obvious from the code is listed here.
 - Anchor every part you create.
 - Don't commit unless asked. Commit messages use short imperative subjects, like
   the existing history.
+- Prefer free Creator Store models to props built from primitives. Load a model
+  with `game:GetObjects("rbxassetid://ID")`, because `insert_asset` fails for
+  models. Strip its scripts and Sounds before use.
+- Don't build characters from primitives. The owner deleted a primitive-built
+  elevator "being" and doesn't want it back; ask how a character should be
+  sourced.
+- Size things for a ~5-stud character. A 13-stud door was "far too tall"; the
+  elevator door is 5.2 x 7.5.
+- Don't spam one light fixture; mix the types. The owner cut 21 chandeliers
+  down to a few.
+
+## Building style
+
+- Hand-built boxes (frames, panels, plates, shelves) get single-face 45°
+  chamfered edges, not sharp corners. Cylinders and balls stay as they are.
+  - Build each one from non-overlapping pieces: a core part, two `<name>_Strip`
+    edge strips and four `<name>_Bevel` WedgeParts. The core keeps the name,
+    attributes and children, and gets the attribute `Bevelled = true`.
+  - Never use two crossed full-length cores; their coplanar faces z-fight.
+  - If you resize a bevelled part, delete its `_Strip` / `_Bevel` siblings and
+    rebuild them.
+- Interaction prompts use Camera.client's popup, pinned to the object: a cream
+  hand tapping it, with a key badge and the action text. Never use a
+  bottom-of-screen prompt box.
+  - Prompts are switched to `Style = Custom` automatically.
+  - Every trigger plays a soft local click, unless the prompt sets
+    `SkipInteractSound`.
 
 ## Code style
 
@@ -45,6 +83,15 @@ recording (`ChangeHistoryService:TryBeginRecording`):
   pose. Never give another model the name `Elevator`; scripts look it up with
   `WaitForChild("Elevator")`.
 
+- The store: an `AmbienceZone` part (StoreAmbience.client), the `StoreRadio`
+  on the Service Counter (Radio.server), and the `CargoCrate` / `CargoDrop`
+  beside the freight door.
+  - Collaborators move the store, so don't hardcode its position.
+  - A decorative model named `Radio` also exists, so never look the radio up
+    by that name.
+  - `ElevatorStoreBack` is an older, doorless copy of the elevator. It has to
+    keep that name.
+
 Before deleting or rebuilding anything in the place, look at what's there.
 Parts have gone missing before (the employee-room window wall) and had to be
 rebuilt from transcript data.
@@ -58,6 +105,23 @@ rebuilt from transcript data.
   3. Kill the server afterwards.
 - Keep the repo and Studio copies identical. If you edit in Studio, mirror the
   edit back to the file.
+  - Studio can be *ahead* of `src`. Before overwriting a script, compare the
+    two and edit whichever is newer.
+- Playtests run the script *editor* copy (`ScriptEditorService:GetEditorSource`),
+  not `.Source`, because the place uses collaborative editing.
+  - Always write with `UpdateSourceAsync`, then check that `GetEditorSource`
+    equals `.Source`.
+- **Rojo can delete Studio-only scripts.** `default.project.json` maps
+  `src/server`, `src/client` and `src/shared` onto the whole of
+  ServerScriptService, StarterPlayerScripts and `ReplicatedStorage.Shared`.
+  Connecting Rojo from an old checkout wiped scripts that existed only in
+  Studio.
+  - Keep every script in `src` and committed.
+  - `ServerStorage.__Rojo_SessionLock` shows who is connected.
+  - To recover, load an old place version with
+    `game:GetObjects("http://www.roblox.com/asset/?id=89318278898862&version=N")`.
+    This returns every service except Workspace.
+- It's a Team Create place with other collaborators editing live.
 - Playtests:
   - `solo_playtest`, then `eval_server_runtime` / `eval_client_runtime` and
     `simulate_keyboard_input`.
@@ -93,6 +157,14 @@ rebuilt from transcript data.
   - Moving an *anchored* character with `PivotTo` on the client doesn't
     replicate. The server still sees the old position and rejects prompts by
     distance, so unanchor the character first.
+- **Viewmodels lead the camera:** Camera.client smooths the view, but the body
+  turns with the raw mouse. Mid-turn, anything held in torso space is up to
+  `MAX_LOOK_LAG` (15°) ahead of what the player sees.
+  - To simulate a mouse turn, rotate `camera.CFrame` in a RenderStep bound at
+    `Camera.Value - 1`. Rotating only the rendered camera never turns the body.
+  - Measure viewmodel results in camera space.
+- **Lighting:** never set `Sky.CelestialBodiesShown = false`. It blew out the
+  elevator floor with an orange glow.
 - **Fonts:** `rbxasset://fonts/families/Garamond.json` fails to load. Use
   `Font.fromEnum(Enum.Font.Garamond)` and set the weight on that.
 
@@ -171,6 +243,9 @@ Tags and attributes:
   - Q is the knob prompt's `AltKey` and turns left. It goes through the
     `SelectorTurn` remote, which checks the player's distance.
   - The dial clamps at both ends and skips the current floor.
+  - The server ignores a turn within `TURN_COOLDOWN` (0.45s) of the last one,
+    so mashing can't stack the 0.42s detent click. The knob prompt sets
+    `SkipInteractSound`, because the dial's click is its feedback.
 - The lever's prompt sends the selected floor (hold 0.5s).
 - FloorSelector.client does all the motion, locally for each player:
   - It rises within 4.5 studs and sinks past 5.5. The owner wants it close.
@@ -181,6 +256,28 @@ Tags and attributes:
 - **Prompt `AltKey` attribute:** Camera.client draws a second key badge left
   of the prompt's own key, and gives it the same click and press. The prompt's
   script has to handle that key itself.
+
+### Cargo lift (Cargo.server / CargoLift.client)
+
+- The lift fills the centre bay of the elevator's back wall. Players load
+  scavenged tools onto its car, and the send button carries them up to the
+  store's `CargoCrate`.
+- Each run gets `MAX_TRIPS` (3) trips.
+- Cargo.server owns the rules. CargoLift.client does all the motion and sound
+  locally; server-side `PivotTo` looked choppy. It reads these attributes:
+  - `CargoLift.CargoValue`: the value aboard, shown on the drum counter.
+  - `CargoLift.SendSeq` / `SendAt`: bumped when a trip starts, with its server
+    time.
+  - The timing attributes: `PressLead`, `GateTime`, `RideTime`, `TopPause`,
+    `ReturnTime` and `Rise`.
+  - `Elevator.CargoTripsLeft`: drives the trip lamps and the gate.
+- Scavenged tools carry `ScavengedLevel`. Loading one marks it `Stored`.
+- Any scavenged tool still held when the elevator leaves a floor is destroyed.
+  Only cargo reaches the store.
+- The owner found Bounce/Elastic easing too bouncy. Use a single small rebound
+  (the `landing()` helper).
+- Look parts up by name, not `PrimaryPart`. Team Create once dropped 23
+  PrimaryPart refs.
 
 ### Other cross-script attributes
 
