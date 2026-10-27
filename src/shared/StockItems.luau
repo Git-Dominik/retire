@@ -44,6 +44,7 @@ local ITEMS = {
 		value = 80,
 		rotation = CFrame.Angles(0, math.rad(-20), 0),
 	},
+	Reimu = { name = "Reimu fumo", model = "Reimu", value = 120 },
 }
 
 local StockItems = {}
