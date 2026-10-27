@@ -18,6 +18,8 @@
 -- attribute this script sets on the local player.
 -- The book is laid out at full size each frame, then shrunk towards the camera (BOOK_SCALE)
 -- so walls can't clip through it.
+-- The first page shows the current day from the workspace DayNumber attribute
+-- (DayNightService), the same one ShopHUD shows, and redraws when it changes.
 
 local CollectionService = game:GetService("CollectionService")
 local ContextActionService = game:GetService("ContextActionService")
@@ -187,7 +189,7 @@ local TASKS = {
 			end,
 		},
 	},
-	-- Nothing sets this phase yet; it's here for when the pawn shop opens by day.
+	-- DayNightService sets this phase from dawn to dusk, while the shop is open.
 	Day = {
 		{
 			id = "take",
@@ -314,7 +316,13 @@ local SECTIONS = {
 		side = -1,
 		x = 0.5,
 		pages = {
-			{ title = "Property of", body = "\n—\n\n\nIf found, do not return it to the elevator." },
+			{
+				render = function()
+					local day = workspace:GetAttribute("DayNumber") or 1
+					return "Property of",
+						`\n—\n\n<font size="44"><b>Day {day}</b></font>\n\nIf found, do not return it to the elevator.`
+				end,
+			},
 			{
 				render = function()
 					return "To do", tasksText()
@@ -1112,6 +1120,13 @@ end)
 
 player.CharacterRemoving:Connect(function()
 	closeBook(true)
+end)
+
+-- A new day redraws the open spread straight away (the first page shows it).
+workspace:GetAttributeChangedSignal("DayNumber"):Connect(function()
+	if book.Parent and not flipping then
+		showSpread()
+	end
 end)
 
 -- ================= PICKUP =================
