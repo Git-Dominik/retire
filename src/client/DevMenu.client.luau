@@ -67,9 +67,13 @@ label("DEV MENU", 1, Enum.Font.GothamBold, 13, Color3.fromRGB(222, 202, 160))
 local stateLabel = label("", 2, Enum.Font.Gotham, 12, Color3.fromRGB(168, 158, 138))
 
 local function updateState()
-	stateLabel.Text = "Doors: " .. tostring(elevator:GetAttribute("DoorState") or "?")
+	stateLabel.Text = "Floor "
+		.. tostring(elevator:GetAttribute("Level") or "?")
+		.. "  ·  Doors: "
+		.. tostring(elevator:GetAttribute("DoorState") or "?")
 end
 elevator:GetAttributeChangedSignal("DoorState"):Connect(updateState)
+elevator:GetAttributeChangedSignal("Level"):Connect(updateState)
 updateState()
 
 local function button(text, order, onClick)
@@ -99,7 +103,13 @@ closeButton.Modal = true
 button("Open elevator", 4, function()
 	devRemote:FireServer("Open")
 end)
-label("F2 to hide", 5, Enum.Font.Gotham, 11, Color3.fromRGB(110, 104, 92))
+button("Descend (skip item)", 5, function()
+	devRemote:FireServer("Descend")
+end)
+button("Summon Librarian (floor 1)", 6, function()
+	devRemote:FireServer("Librarian")
+end)
+label("F2 to hide", 7, Enum.Font.Gotham, 11, Color3.fromRGB(110, 104, 92))
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then

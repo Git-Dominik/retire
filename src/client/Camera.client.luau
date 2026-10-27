@@ -15,13 +15,15 @@ local CROUCH_SPEED = 5.6
 local BASE_FOV = 72
 -- How fast the view catches up to the mouse. Lower trails further behind;
 -- around 30+ feels close to the raw default camera.
-local LOOK_SMOOTHING = 20
+local LOOK_SMOOTHING = 10
 -- Furthest the view may trail the mouse, in degrees, so fast spins stay tight.
-local MAX_LOOK_LAG = 12
+local MAX_LOOK_LAG = 15
 -- Degrees of roll per degree the view trails the mouse; turning left leans right.
-local TURN_LEAN = 0.12
+local TURN_LEAN = 0.1
 -- Studs the camera pushes forward while sprinting, easing back after you stop.
-local SPRINT_FORWARD = 0.6
+local SPRINT_FORWARD = 1.5
+-- Pitch the view is pulled to while reading the journal, in degrees.
+local READ_PITCH = -46
 
 local touch = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
 
@@ -46,15 +48,23 @@ local dot = Instance.new("Frame")
 dot.Name = "Crosshair"
 dot.AnchorPoint = Vector2.new(0.5, 0.5)
 dot.Position = UDim2.fromScale(0.5, 0.5)
-dot.Size = UDim2.fromOffset(3, 3)
+dot.Size = UDim2.fromOffset(6, 6)
 dot.BackgroundColor3 = Color3.fromRGB(230, 222, 205)
-dot.BackgroundTransparency = 0.55
+dot.BackgroundTransparency = 0.6
 dot.BorderSizePixel = 0
 dot.ZIndex = 2
 dot.Parent = gui
 local dotCorner = Instance.new("UICorner")
 dotCorner.CornerRadius = UDim.new(1, 0)
 dotCorner.Parent = dot
+local dotStroke = Instance.new("UIStroke")
+dotStroke.Color = Color3.fromRGB(10, 10, 10)
+dotStroke.Transparency = 0.7
+dotStroke.Thickness = 1
+dotStroke.Parent = dot
+
+-- hide the default mouse cursor; the dot replaces it
+UserInputService.MouseIconEnabled = false
 
 local staminaBg = Instance.new("Frame")
 staminaBg.Name = "Stamina"
@@ -197,22 +207,62 @@ local function hidePrompt(prompt)
 	if promptTween then
 		promptTween:Cancel()
 	end
-	promptTween = TweenService:Create(promptGroup, TweenInfo.new(0.14), { GroupTransparency = 1 })
-	promptTween.Completed:Connect(function()
-		if promptGroup.GroupTransparency >= 0.99 then
+	local hideTween = TweenService:Create(promptGroup, TweenInfo.new(0.14), { GroupTransparency = 1 })
+	promptTween = hideTween
+	-- Completed is deferred, so it can land after another prompt has already been
+	-- shown; only hide if this fade-out finished and nothing replaced it.
+	hideTween.Completed:Connect(function(state)
+		if state == Enum.PlaybackState.Completed and promptTween == hideTween and not currentPrompt then
 			promptGroup.Visible = false
 		end
 	end)
 	promptTween:Play()
 end
 
+-- Soft outline around whatever the current prompt belongs to. A part that is a
+-- model's PrimaryPart (the lobby journal) outlines the whole model.
+local outline = Instance.new("Highlight")
+outline.Name = "InteractOutline"
+outline.FillTransparency = 1
+outline.OutlineColor = Color3.fromRGB(255, 222, 168)
+outline.OutlineTransparency = 1
+outline.DepthMode = Enum.HighlightDepthMode.Occluded
+outline.Parent = playerGui
+local outlinePrompt
+local outlineTween
+
+local function outlineTarget(prompt)
+	local parent = prompt.Parent
+	local model = parent and parent.Parent
+	if model and model:IsA("Model") and model.PrimaryPart == parent then
+		return model
+	end
+	return parent
+end
+
+local function setOutline(prompt)
+	outlinePrompt = prompt
+	if prompt then
+		outline.Adornee = outlineTarget(prompt)
+	end
+	if outlineTween then
+		outlineTween:Cancel()
+	end
+	outlineTween = TweenService:Create(outline, TweenInfo.new(prompt and 0.16 or 0.14), { OutlineTransparency = prompt and 0.25 or 1 })
+	outlineTween:Play()
+end
+
 ProximityPromptService.PromptShown:Connect(function(prompt)
+	setOutline(prompt)
 	if touch then
 		return
 	end
 	showPrompt(prompt)
 end)
 ProximityPromptService.PromptHidden:Connect(function(prompt)
+	if outlinePrompt == prompt then
+		setOutline(nil)
+	end
 	if touch then
 		return
 	end
@@ -220,11 +270,16 @@ ProximityPromptService.PromptHidden:Connect(function(prompt)
 end)
 
 if not touch then
-	for _, d in ipairs(workspace:GetDescendants()) do
+	local function useCustomStyle(d)
 		if d:IsA("ProximityPrompt") then
 			d.Style = Enum.ProximityPromptStyle.Custom
 		end
 	end
+	for _, d in ipairs(workspace:GetDescendants()) do
+		useCustomStyle(d)
+	end
+	-- Prompts on things spawned later (floor items, the offering tray) too.
+	workspace.DescendantAdded:Connect(useCustomStyle)
 end
 
 -- ================= MOVEMENT =================
@@ -240,6 +295,10 @@ local bobPhase = 0
 -- of popping when you start, stop or begin sprinting.
 local bobAmount = 0
 local shakeAmount = 0
+local rumbleAmount = 0
+local readBlend = 0
+-- Pitch you were looking at when the journal opened; set while reading or easing back.
+local readFromPitch
 local crouchOffset = 0
 local roll = 0
 -- Rotation the default camera chose this frame, before smoothing.
@@ -421,6 +480,7 @@ RunService.RenderStepped:Connect(function(dt)
 	staminaFill.BackgroundTransparency = 0.12 + 0.7 * hudFade
 	sbStroke.Transparency = 0.55 + 0.45 * hudFade
 	dot.BackgroundTransparency = 0.55 + 0.35 * hudFade
+	dot.Visible = not player:GetAttribute("ReadingJournal")
 
 	if touch then
 		paintTouchButton(sprintButton, sprintHeld)
@@ -450,6 +510,33 @@ RunService:BindToRenderStep("HotelCameraFX", Enum.RenderPriority.Camera.Value + 
 	end
 	targetCFrame = camera.CFrame
 	local pitch, yaw = targetCFrame:ToEulerAnglesYXZ()
+	-- Reading the journal (see Journal.client) holds the pitch: it eases from where
+	-- you were looking down onto the book and back again, while the mouse still
+	-- turns you left and right. Writing the held pitch into targetCFrame stops the
+	-- default camera from banking up vertical mouse movement in the meantime.
+	-- Scripted moves (crawling through a vent) set ForcedLook to the direction the
+	-- view should face; it eases round to it, and mouse look is ignored until it
+	-- clears. Like the pitch hold below, writing it into targetCFrame keeps the
+	-- default camera from banking up mouse movement in the meantime.
+	local forcedLook = player:GetAttribute("ForcedLook")
+	if typeof(forcedLook) == "Vector3" and forcedLook.Magnitude > 0 then
+		local goal = CFrame.lookAt(Vector3.zero, forcedLook)
+		local current = targetCFrame - targetCFrame.Position
+		targetCFrame = CFrame.new(targetCFrame.Position) * current:Lerp(goal, math.min(dt * 8, 1))
+		pitch, yaw = targetCFrame:ToEulerAnglesYXZ()
+	end
+	local reading = player:GetAttribute("ReadingJournal")
+	readBlend += ((reading and 1 or 0) - readBlend) * math.min(dt * 5, 1)
+	if reading and not readFromPitch then
+		readFromPitch = pitch
+	end
+	if readFromPitch then
+		pitch = readFromPitch + (math.rad(READ_PITCH) - readFromPitch) * readBlend
+		targetCFrame = CFrame.new(targetCFrame.Position) * CFrame.fromEulerAnglesYXZ(pitch, yaw, 0)
+		if not reading and readBlend < 0.01 then
+			readFromPitch = nil
+		end
+	end
 	if targetYaw then
 		-- Wrap only the per-frame step, which is always well under half a turn.
 		targetYaw += (yaw - targetYaw + math.pi) % (2 * math.pi) - math.pi
@@ -471,8 +558,16 @@ RunService:BindToRenderStep("HotelCameraFX", Enum.RenderPriority.Camera.Value + 
 	roll += (targetRoll - roll) * math.min(dt * 6, 1)
 	shakeAmount += ((sprinting and 1 or 0) - shakeAmount) * math.min(dt * 5, 1)
 	local shake = math.noise(os.clock() * 14, 0) * 0.1 * shakeAmount
+	-- Low rattle while the elevator is descending; eases in and out with the ride.
+	local elevator = workspace:FindFirstChild("Elevator")
+	local descending = elevator and elevator:GetAttribute("Descending")
+	rumbleAmount += ((descending and 1 or 0) - rumbleAmount) * math.min(dt * 1.5, 1)
+	local t = os.clock()
+	local rumblePitch = math.noise(t * 9, 3.1) * 0.5 * rumbleAmount
+	local rumbleRoll = math.noise(t * 7, 8.7) * 0.42 * rumbleAmount
+	local rumbleY = math.noise(t * 11, 5.3) * 0.075 * rumbleAmount
 	local turnLean = -math.deg(targetYaw - smoothYaw) * TURN_LEAN
-	camera.CFrame = CFrame.new(targetCFrame.Position)
+	camera.CFrame = CFrame.new(targetCFrame.Position + Vector3.new(0, rumbleY, 0))
 		* smoothRotation
-		* CFrame.Angles(math.rad(shake), 0, math.rad(roll + turnLean))
+		* CFrame.Angles(math.rad(shake + rumblePitch), 0, math.rad(roll + turnLean + rumbleRoll))
 end)
