@@ -1,6 +1,12 @@
 -- Builds the plain room that sits outside the elevator doors on each floor.
 -- The elevator itself never moves: the room is swapped while the doors are shut.
 -- Rooms butt straight onto the elevator's front facade, which serves as their fourth wall.
+-- Each floor holds one scavenge item, a random pick from ReplicatedStorage.StockItems
+-- (definitions and prices in Shared.StockItems). It carries Value and ItemId attributes.
+
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local StockItems = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("StockItems"))
 
 -- Floor 1 is built by a procedural generator. FoundryLevel is still being finished (it has
 -- no Layout/Hub/Pit/Halls yet), so only pick it up once those modules exist and fall back
@@ -38,53 +44,10 @@ local PALETTES = {
 	{ wall = Color3.fromRGB(110, 96, 70), floor = Color3.fromRGB(66, 50, 34), trim = Color3.fromRGB(46, 36, 24) },
 }
 
--- Cylinders stand upright; everything else lies flat.
--- value is what it pawns for (dollars), weight is what the cargo scale reads (kg).
-local ITEMS = {
-	{
-		name = "Brass Key",
-		value = 35,
-		weight = 0.4,
-		size = Vector3.new(0.3, 0.15, 1.1),
-		color = Color3.fromRGB(181, 145, 72),
-		material = Enum.Material.Metal,
-	},
-	{
-		name = "Old Photograph",
-		value = 20,
-		weight = 0.2,
-		size = Vector3.new(0.9, 0.04, 1.2),
-		color = Color3.fromRGB(196, 182, 150),
-		material = Enum.Material.SmoothPlastic,
-	},
-	{
-		name = "Pocket Watch",
-		value = 120,
-		weight = 0.6,
-		shape = Enum.PartType.Cylinder,
-		size = Vector3.new(0.2, 0.9, 0.9),
-		color = Color3.fromRGB(170, 150, 110),
-		material = Enum.Material.Metal,
-	},
-	{
-		name = "Teacup",
-		value = 45,
-		weight = 0.9,
-		shape = Enum.PartType.Cylinder,
-		size = Vector3.new(0.45, 0.55, 0.55),
-		color = Color3.fromRGB(226, 222, 210),
-		material = Enum.Material.SmoothPlastic,
-	},
-	{
-		name = "Candle Stub",
-		value = 8,
-		weight = 0.5,
-		shape = Enum.PartType.Cylinder,
-		size = Vector3.new(0.7, 0.35, 0.35),
-		color = Color3.fromRGB(232, 222, 196),
-		material = Enum.Material.SmoothPlastic,
-	},
-}
+-- Each floor's item is drawn from ReplicatedStorage.StockItems, weighted by
+-- value ^ -RARITY: at 1, a $12 lighter turns up about 29 times as often as a
+-- $350 ring box; 0 makes every item equally likely.
+local RARITY = 1
 
 local LAMP_COLOR = Color3.fromRGB(255, 196, 140)
 
@@ -100,15 +63,6 @@ local function part(parent, name, size, cframe, color, material)
 	p.BottomSurface = Enum.SurfaceType.Smooth
 	p.Parent = parent
 	return p
-end
-
--- Rests a part on a surface, given the surface's top-centre CFrame.
-function Levels.rest(p, surface)
-	if p.Shape == Enum.PartType.Cylinder then
-		p.CFrame = surface * CFrame.new(0, p.Size.X / 2, 0) * CFrame.Angles(0, 0, math.pi / 2)
-	else
-		p.CFrame = surface * CFrame.new(0, p.Size.Y / 2, 0)
-	end
 end
 
 -- A small four-legged table; returns its top-centre CFrame.
@@ -150,15 +104,90 @@ local function makeLamp(parent, cf)
 	light.Parent = bulb
 end
 
--- The floor's item, resting on a surface at a random turn.
-local function placeItem(room, itemDef, surface, rng)
-	local item = part(room, itemDef.name, itemDef.size, CFrame.identity, itemDef.color, itemDef.material)
-	if itemDef.shape then
-		item.Shape = itemDef.shape
+local function pickItem(rng)
+	local ids, total = {}, 0
+	for _, id in StockItems.ids() do
+		local def = StockItems.get(id)
+		if StockItems.template(id) then
+			local chance = (def.value or 1) ^ -RARITY
+			table.insert(ids, { id = id, chance = chance })
+			total += chance
+		end
 	end
+	local roll = rng:NextNumber(0, total)
+	for _, entry in ids do
+		roll -= entry.chance
+		if roll <= 0 then
+			return StockItems.get(entry.id)
+		end
+	end
+	return StockItems.get(ids[#ids].id)
+end
+
+-- The floor's item, resting on a surface at a random turn. It's one part (the
+-- template's biggest opaque part by surface area) carrying the rest of the model as welded
+-- children, because the take prompt, the held tool's Handle and the cargo lift all
+-- deal in a single part. RestOffset is that part's CFrame relative to the item's
+-- bottom centre, so anything re-resting it (Cargo.server) knows where it sits;
+-- ShownTransparency on each piece is what to restore after hiding it.
+local function placeItem(room, itemDef, surface, rng)
+	local model = StockItems.create(itemDef.id)
+	local rest = surface * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0)
+	model:PivotTo(rest)
+	local parts, item, bestArea = {}, nil, -1
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") then
+			table.insert(parts, d)
+			local s = d.Size
+			-- Opaque parts win: Journal.client reads a visible item as Transparency 0.
+			local area = s.X * s.Y + s.Y * s.Z + s.X * s.Z + (d.Transparency == 0 and 1e6 or 0)
+			if area > bestArea then
+				item, bestArea = d, area
+			end
+		elseif
+			d:IsA("LuaSourceContainer")
+			or d:IsA("Sound")
+			or d:IsA("JointInstance")
+			or d:IsA("WeldConstraint")
+		then
+			d:Destroy()
+		end
+	end
+	-- Template pivots don't all sit exactly on the model's underside, so lift it by its
+	-- real lowest corner.
+	local lowest = math.huge
+	for _, p in parts do
+		local h = p.Size / 2
+		for _, sx in { -1, 1 } do
+			for _, sy in { -1, 1 } do
+				for _, sz in { -1, 1 } do
+					local corner = p.CFrame * Vector3.new(sx * h.X, sy * h.Y, sz * h.Z)
+					lowest = math.min(lowest, rest:PointToObjectSpace(corner).Y)
+				end
+			end
+		end
+	end
+	model:PivotTo(model:GetPivot() + rest.UpVector * -lowest)
+	item:SetAttribute("RestOffset", rest:ToObjectSpace(item.CFrame))
+	for _, p in parts do
+		p:SetAttribute("ShownTransparency", p.Transparency)
+		p.CanCollide = false
+		if p ~= item then
+			p.Anchored = false
+			p.Massless = true
+			p.Parent = item
+			local weld = Instance.new("WeldConstraint")
+			weld.Part0 = item
+			weld.Part1 = p
+			weld.Parent = p
+		end
+	end
+	item.Name = itemDef.name
+	item.Anchored = true
 	item:SetAttribute("Value", itemDef.value)
-	item:SetAttribute("Weight", itemDef.weight)
-	Levels.rest(item, surface * CFrame.Angles(0, rng:NextNumber(0, math.pi * 2), 0))
+	item:SetAttribute("ItemId", itemDef.id)
+	item.Parent = room
+	model:Destroy()
 	return item
 end
 
@@ -167,7 +196,8 @@ end
 function Levels.build(level, base)
 	local rng = Random.new(level)
 	local palette = PALETTES[(level - 1) % #PALETTES + 1]
-	local itemDef = ITEMS[(level - 1) % #ITEMS + 1]
+	-- The room's layout is fixed per floor, but the item is a fresh draw every visit.
+	local itemDef = pickItem(Random.new())
 
 	-- Floor 1 is procedurally generated; the generator picks where the item goes.
 	if level == 1 then

@@ -1,6 +1,13 @@
 -- The journal lying on a stand in the lobby. Every player takes their own copy
 -- (the HasJournal player attribute); reading it is handled by Journal.client.
+--
+-- While someone is reading, a small book icon floats above their head for everyone else
+-- (Journal.client fires the JournalRead remote as the book goes up or down; the server
+-- owns the icon so it replicates, and hides it from the reader themselves).
 -- The stand sits where the floor rooms get built, so it goes once we leave the lobby.
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local elevator = workspace:WaitForChild("Elevator")
 
@@ -73,5 +80,62 @@ stand.Parent = workspace
 elevator:GetAttributeChangedSignal("Level"):Connect(function()
 	if (elevator:GetAttribute("Level") or 0) > 0 and stand.Parent then
 		stand:Destroy()
+	end
+end)
+
+-- ================= READING ICON =================
+local readRemote = Instance.new("RemoteEvent")
+readRemote.Name = "JournalRead"
+readRemote.Parent = ReplicatedStorage
+
+local function frame(parent, size, position, color, corner)
+	local f = Instance.new("Frame")
+	f.AnchorPoint = Vector2.new(0.5, 0.5)
+	f.Size = size
+	f.Position = position
+	f.BackgroundColor3 = color
+	f.BorderSizePixel = 0
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, corner)
+	c.Parent = f
+	f.Parent = parent
+	return f
+end
+
+-- A little open book: leather cover, two cream pages, a dark spine.
+local function buildIcon(player)
+	local gui = Instance.new("BillboardGui")
+	gui.Name = "JournalIcon"
+	gui.Size = UDim2.fromOffset(44, 36)
+	gui.StudsOffsetWorldSpace = Vector3.new(0, 2.6, 0)
+	gui.AlwaysOnTop = true
+	gui.MaxDistance = 60
+	gui.PlayerToHideFrom = player
+	frame(gui, UDim2.fromScale(1, 1), UDim2.fromScale(0.5, 0.5), LEATHER, 5)
+	frame(gui, UDim2.fromScale(0.42, 0.72), UDim2.fromScale(0.28, 0.5), PAPER, 2)
+	frame(gui, UDim2.fromScale(0.42, 0.72), UDim2.fromScale(0.72, 0.5), PAPER, 2)
+	frame(gui, UDim2.new(0, 2, 0.84, 0), UDim2.fromScale(0.5, 0.5), WOOD, 0)
+	return gui
+end
+
+readRemote.OnServerEvent:Connect(function(player, reading)
+	local head = player.Character and player.Character:FindFirstChild("Head")
+	if typeof(reading) ~= "boolean" or not head then
+		return
+	end
+	local icon = head:FindFirstChild("JournalIcon")
+	if reading and not icon and player:GetAttribute("HasJournal") then
+		buildIcon(player).Parent = head
+	elseif not reading and icon then
+		icon:Destroy()
+	end
+end)
+
+-- The reader may close the book as they die; the icon goes with the old character anyway.
+Players.PlayerRemoving:Connect(function(player)
+	local head = player.Character and player.Character:FindFirstChild("Head")
+	local icon = head and head:FindFirstChild("JournalIcon")
+	if icon then
+		icon:Destroy()
 	end
 end)

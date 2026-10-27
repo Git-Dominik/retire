@@ -1,21 +1,28 @@
 -- G reads the journal once you've picked it up in the lobby (Journal.server).
 -- The book rises from the bottom of the screen and starts opening as it nears
 -- the centre, while the view tips down and the world behind falls out of focus.
--- The left/right arrow keys turn pages; you can keep walking and turning while
--- reading, only the view's up/down angle is held (Camera.client).
+-- The left/right arrow keys turn pages, and the coloured bookmarks jump between
+-- sections (Guides, Floor, Money). The cursor is freed to click them; you can keep
+-- walking while reading, only the view's up/down angle is held (Camera.client) and
+-- the view turns only while the right mouse button is held.
 -- Everything moves with the same exponential smoothing as the camera and
 -- movement (no tweens), so it chases its target the instant input changes.
--- The second page is a to-do list for the current phase of the game (see TASKS
--- below): each line is ticked off as the state other scripts publish changes.
+-- Guides holds the to-do list for the current phase of the game (see TASKS below):
+-- each line is ticked off as the state other scripts publish changes. Floor tracks the
+-- current floor's item and the cargo lift; Money shows the Player "Money" attribute
+-- (set by Cargo.server, this session only) and the deliveries behind it.
 -- The current to-do step also gets a bobbing arrow over its object in the world
 -- (the elevator's floor selector, floor item, cargo lift car and send button). Until you
 -- take it, the lobby book carries a bobbing arrow marker (built here,
 -- so it disappears for you alone). The camera tilt lives in Camera.client, which watches the ReadingJournal
 -- attribute this script sets on the local player.
+-- The book is laid out at full size each frame, then shrunk towards the camera (BOOK_SCALE)
+-- so walls can't clip through it.
 
 local CollectionService = game:GetService("CollectionService")
 local ContextActionService = game:GetService("ContextActionService")
 local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
@@ -38,6 +45,9 @@ local PAGE_W = 1.25
 local PAGE_H = 1.7
 -- Studs in front of the camera the open book is held, centred on screen.
 local HOLD_DISTANCE = 2
+-- The book is shrunk towards the camera by this factor (and its pixel density raised to match),
+-- so it looks the same but sits too close for a wall to poke through it.
+local BOOK_SCALE = 0.25
 -- Where the book waits below the screen, and how far it leans back while down there.
 local LOWERED_Y = -2.6
 local LOWERED_TILT = 35
@@ -60,43 +70,6 @@ local PAPER_AGED = Color3.fromRGB(168, 140, 102)
 local INK = Color3.fromRGB(46, 34, 26)
 local ACCENT = Color3.fromRGB(112, 30, 26)
 local RING = Color3.fromRGB(42, 38, 36)
-local TAB_COLORS = {
-	Color3.fromRGB(196, 168, 74),
-	Color3.fromRGB(150, 52, 46),
-	Color3.fromRGB(104, 128, 86),
-	Color3.fromRGB(78, 96, 130),
-}
-
--- Placeholder entries; two pages per spread, left then right.
-local PAGES = {
-	{ title = "Property of", body = "\n—\n\n\nIf found, do not return it to the elevator." },
-	{ title = "To do", tasks = true },
-	{
-		title = "Day 1",
-		body = "The lift was waiting with its doors open, as if it knew I was coming. Warm light, a gramophone, a smell of old velvet. Someone had set a place for me.",
-	},
-	{
-		title = "Day 2",
-		body = "It wants something from every floor. Not money. Things. A key, a photograph, a cup. I don't know what it does with them.",
-	},
-	{
-		title = "The rooms",
-		body = "Always quiet. Too quiet for a hotel. The lamps are lit but nobody lit them, and the rugs have never been walked on.",
-	},
-	{
-		title = "Day 4",
-		body = "I counted the floors on the dial. There are more ticks than there should be. The needle doesn't care what I count.",
-	},
-	{
-		title = "Note to self",
-		body = "- Bring the thing back.\n- Don't run in the halls.\n- Don't answer if it asks your name.",
-	},
-	{
-		title = "Day 7",
-		body = "The music only plays when we move. I've started to look forward to it, and that frightens me more than anything down here.",
-	},
-	{ body = "\n\n\n\n(the rest of the pages are blank)" },
-}
 
 -- ================= TO-DO LIST =================
 -- Tasks are grouped by phase. The phase is the workspace attribute "Phase"
@@ -288,6 +261,138 @@ local function tasksText()
 	return table.concat(lines, "\n\n")
 end
 
+-- ================= SECTIONS =================
+-- The bookmarks. Each section starts on a left-hand page so its tab can flip straight
+-- to it; a section with an odd number of pages gets a blank one to keep the next
+-- aligned. `render` pages are redrawn from live state while the book lies open.
+local ledger = {} -- money earned this session, one entry per delivered item (never saved)
+local lastMoney = player:GetAttribute("Money") or 0
+player:GetAttributeChangedSignal("Money"):Connect(function()
+	local now = player:GetAttribute("Money") or 0
+	if now > lastMoney then
+		table.insert(ledger, now - lastMoney)
+	end
+	lastMoney = now
+end)
+
+local function floorPage()
+	local elevator = workspace:FindFirstChild("Elevator")
+	local level = elevator and elevator:GetAttribute("Level") or 0
+	-- Elevator.server tags the one item on the floor you're standing on.
+	local item = level > 0 and CollectionService:GetTagged("ScavengeItem")[1]
+	if not item then
+		return "Floor", "Nothing to track yet.\n\nRide the elevator down and each floor's item is written here."
+	end
+	local status
+	if carryingScavenged() then
+		status = "In your hands"
+	elseif liftAttribute("CargoValue") > 0 then
+		status = "On the cargo lift"
+	elseif item.Transparency == 0 then
+		status = "Still lying where it fell"
+	else
+		status = "Sent up to the shop"
+	end
+	return `Floor {level}`,
+		`<b>{item.Name}</b>\n\nWorth ${item:GetAttribute("Value") or 0}\n\n<font color="{CHECK_INK}">{status}</font>`
+end
+
+local function liftPage()
+	local elevator = workspace:FindFirstChild("Elevator")
+	return "Cargo lift",
+		`On the lift now\n<b>${liftAttribute("CargoValue")}</b>\n\nTrips left\n<b>{elevator and elevator:GetAttribute("CargoTripsLeft") or 0}</b>`
+end
+
+local function moneyPage()
+	return "Money",
+		`<font size="58"><b>${player:GetAttribute("Money") or 0}</b></font>\n\nearned this session\n{#ledger} {#ledger == 1 and "delivery" or "deliveries"}\n\n<i>Not kept once you leave.</i>`
+end
+
+local function ledgerPage()
+	local lines = {}
+	for i = #ledger, math.max(#ledger - 7, 1), -1 do
+		table.insert(lines, `+ ${ledger[i]}`)
+	end
+	return "Ledger", #lines > 0 and table.concat(lines, "\n") or "Nothing sold yet."
+end
+
+local SECTIONS = {
+	{
+		name = "Guides",
+		color = Color3.fromRGB(196, 168, 74),
+		side = -1,
+		x = 0.5,
+		pages = {
+			{ title = "Property of", body = "\n—\n\n\nIf found, do not return it to the elevator." },
+			{
+				render = function()
+					return "To do", tasksText()
+				end,
+			},
+			{
+				title = "Day 1",
+				body = "The lift was waiting with its doors open, as if it knew I was coming. Warm light, a gramophone, a smell of old velvet. Someone had set a place for me.",
+			},
+			{
+				title = "Day 2",
+				body = "It wants something from every floor. Not money. Things. A lighter, a music box, once a pocket watch. I don't know what it does with them.",
+			},
+			{
+				title = "The rooms",
+				body = "Always quiet. Too quiet for a hotel. The lamps are lit but nobody lit them, and the rugs have never been walked on.",
+			},
+			{
+				title = "Day 4",
+				body = "I counted the floors on the dial. There are more ticks than there should be. The needle doesn't care what I count.",
+			},
+			{
+				title = "Note to self",
+				body = "- Bring the thing back.\n- Don't run in the halls.\n- Don't answer if it asks your name.",
+			},
+			{
+				title = "Day 7",
+				body = "The music only plays when we move. I've started to look forward to it, and that frightens me more than anything down here.",
+			},
+		},
+	},
+	{
+		name = "Floor",
+		color = Color3.fromRGB(150, 52, 46),
+		side = 1,
+		x = 0.32,
+		pages = { { render = floorPage }, { render = liftPage } },
+	},
+	{
+		name = "Money",
+		color = Color3.fromRGB(104, 128, 86),
+		side = 1,
+		x = 0.68,
+		pages = { { render = moneyPage }, { render = ledgerPage } },
+	},
+}
+
+local PAGES = {}
+for _, section in SECTIONS do
+	section.first = #PAGES + 1
+	for _, page in section.pages do
+		table.insert(PAGES, page)
+	end
+	if #PAGES % 2 == 1 then
+		table.insert(PAGES, {})
+	end
+	section.firstSpread = (section.first - 1) // 2
+	section.lastSpread = (#PAGES - 1) // 2
+end
+
+local function sectionAt(spreadIndex)
+	for _, section in SECTIONS do
+		if spreadIndex >= section.firstSpread and spreadIndex <= section.lastSpread then
+			return section
+		end
+	end
+	return nil
+end
+
 -- ================= WORLD MARKERS =================
 -- A gold arrow bobbing over an object, with a caption. Built on the client, so
 -- each player sees their own. The arrow rides a looping tween; the caption stays put.
@@ -334,27 +439,55 @@ local function makeMarker(name, captionText)
 end
 
 -- Points at the current task's target. Hidden until the journal is taken (the
--- pickup arrow covers that), and while the book is open.
+-- pickup arrow covers that), and while the book is open. The billboard hangs from an
+-- invisible part that glides toward the top of the target every frame, so a target
+-- that moves (the floor selector rising out of the floor) or changes (the next step)
+-- never makes the arrow jump.
+local MARKER_FOLLOW_RATE = 9
 task.spawn(function()
 	local marker = makeMarker("TaskMarker", "")
+	local anchor = Instance.new("Part")
+	anchor.Name = "TaskMarkerAnchor"
+	anchor.Anchored = true
+	anchor.CanCollide = false
+	anchor.CanQuery = false
+	anchor.CanTouch = false
+	anchor.Transparency = 1
+	anchor.Size = Vector3.one
+	anchor.Parent = workspace.CurrentCamera
+	marker.Adornee = anchor
+
+	local target, shown = nil, false
+	local function goalOf()
+		-- Targets are parts or models; the arrow floats a little above the top.
+		if target:IsA("Model") then
+			local cf, size = target:GetBoundingBox()
+			return cf.Position + Vector3.new(0, size.Y / 2 + 2, 0)
+		end
+		return target.Position + Vector3.new(0, target.Size.Y / 2 + 2, 0)
+	end
+
+	RunService.Heartbeat:Connect(function(dt)
+		if not target or not target.Parent then
+			return
+		end
+		local goal = goalOf()
+		-- First appearance snaps; after that it glides.
+		anchor.Position = shown and anchor.Position:Lerp(goal, 1 - math.exp(-MARKER_FOLLOW_RATE * dt)) or goal
+		shown = true
+	end)
+
 	while true do
 		local _, current = evaluateTasks()
-		local target = current and current.target and current.target()
-		-- Targets are parts or models; hang the arrow from a part, a little above the top.
-		local anchor = basePartOf(target)
-		local show = anchor ~= nil
+		local candidate = current and current.target and current.target()
+		local show = basePartOf(candidate) ~= nil
 			and player:GetAttribute("HasJournal") == true
 			and not player:GetAttribute("ReadingJournal")
+		target = show and candidate or nil
 		if show then
-			local center, size = anchor.Position, anchor.Size
-			if target:IsA("Model") then
-				local cf
-				cf, size = target:GetBoundingBox()
-				center = cf.Position
-			end
-			marker.Adornee = anchor
-			marker.StudsOffsetWorldSpace = center - anchor.Position + Vector3.new(0, size.Y / 2 + 2, 0)
 			marker.Caption.Text = current.text
+		else
+			shown = false
 		end
 		marker.Enabled = show
 		task.wait(0.25)
@@ -511,9 +644,16 @@ end
 
 local function setPage(gui, index)
 	local page = PAGES[index]
-	gui.Title.Text = page and page.title or ""
-	gui.Body.Text = page and (page.tasks and tasksText() or page.body) or ""
-	gui.Rule.Visible = page ~= nil and page.title ~= nil
+	local title, body = "", ""
+	if page then
+		title, body = page.title or "", page.body or ""
+		if page.render then
+			title, body = page.render()
+		end
+	end
+	gui.Title.Text = title
+	gui.Body.Text = body
+	gui.Rule.Visible = title ~= ""
 	gui.Number.Text = page and `— {index} —` or ""
 end
 
@@ -552,11 +692,12 @@ for i = 1, RING_COUNT do
 	table.insert(rings, { part = r, offset = CFrame.new(0, 0.075, z) * CFrame.Angles(0, math.rad(-9), 0) })
 end
 
--- Coloured bookmark tabs poking out of the top edge, two per half.
+-- One coloured bookmark per section, poking out of the top edge. The one for the section
+-- you're reading stands a little prouder.
 local tabs = {}
-for i, color in TAB_COLORS do
-	local t = part(book, "Tab", Vector3.new(0.24, 0.012, 0.22), color, Enum.Material.Fabric)
-	table.insert(tabs, { part = t, side = i <= 2 and -1 or 1, x = i % 2 == 1 and 0.32 or 0.68 })
+for _, section in SECTIONS do
+	local t = part(book, "Tab", Vector3.new(0.24, 0.012, 0.22), section.color, Enum.Material.Fabric)
+	table.insert(tabs, { part = t, section = section, side = section.side, x = section.x, lift = 0 })
 end
 
 -- The sheet that swings across the spine while turning a page. Its back is a
@@ -582,11 +723,11 @@ end
 
 -- A soft reading light in front of the spread, so the book is legible anywhere.
 local lightHolder = Instance.new("Attachment")
-lightHolder.Position = Vector3.new(0, 1.6, 0.2)
+lightHolder.Position = Vector3.new(0, 1.6, 0.2) * BOOK_SCALE
 lightHolder.Parent = spine
 local readingLight = Instance.new("PointLight")
 readingLight.Color = Color3.fromRGB(255, 210, 160)
-readingLight.Range = 6
+readingLight.Range = 6 * BOOK_SCALE
 readingLight.Brightness = 0.65
 readingLight.Shadows = false
 readingLight.Parent = lightHolder
@@ -606,7 +747,7 @@ local pageSound = makeSound(PAGE_SOUND_ID, 0.2)
 -- ================= FOCUS EFFECTS =================
 local focus = Instance.new("DepthOfFieldEffect")
 focus.Name = "JournalFocus"
-focus.FocusDistance = HOLD_DISTANCE
+focus.FocusDistance = HOLD_DISTANCE * BOOK_SCALE
 focus.InFocusRadius = 0.6
 focus.NearIntensity = 0
 focus.FarIntensity = 0
@@ -629,7 +770,7 @@ gui.Parent = player:WaitForChild("PlayerGui")
 local hint = Instance.new("TextLabel")
 hint.AnchorPoint = Vector2.new(0.5, 1)
 hint.Position = UDim2.new(0.5, 0, 1, -40)
-hint.Size = UDim2.fromOffset(420, 24)
+hint.Size = UDim2.fromOffset(560, 24)
 hint.BackgroundTransparency = 1
 hint.Font = Enum.Font.GothamBold
 hint.TextSize = 12
@@ -650,7 +791,7 @@ local function showHint(text, visible)
 end
 
 -- ================= STATE =================
-local state = "closed" -- closed, opening, open, closing
+local state = "closed" -- closed, opening, open, switching (shut to jump to a bookmark), closing
 -- Each pair is the smoothed value and the target it chases.
 local raise, targetRaise = 0, 0 -- 0 below the screen, 1 held up in front of you
 local openness, targetOpen = 0, 0 -- 0 shut, 1 lying open
@@ -662,6 +803,8 @@ local spread = 0
 local spreadCount = math.ceil(#PAGES / 2)
 local inputBound = false
 local refreshTimer = 0
+local goalSpread -- a bookmark was clicked: the book shuts, then reopens at this spread
+local pageShake = 0 -- kicked on each page turn, decays; jolts the book a little
 
 local function approach(value, goal, rate, dt)
 	return value + (goal - value) * (1 - math.exp(-rate * dt))
@@ -687,6 +830,7 @@ local function flip(dir)
 	flipping = true
 	flipDir = dir
 	pageSound:Play()
+	pageShake = 1
 	if dir > 0 then
 		-- The current right page lifts away, revealing the next right page beneath it.
 		setPage(sheetFront, spread * 2 + 2)
@@ -702,9 +846,65 @@ local function flip(dir)
 	sheet.Parent = book
 end
 
+-- Clickable labels riding over the tabs. The tabs are parts in the book, so these are
+-- repositioned to wherever the tab projects on screen each frame.
+for _, tab in tabs do
+	local button = Instance.new("TextButton")
+	button.Name = tab.section.name
+	button.AnchorPoint = Vector2.new(0.5, 0)
+	button.Size = UDim2.fromOffset(76, 80)
+	button.BackgroundTransparency = 1
+	button.AutoButtonColor = false
+	button.Font = Enum.Font.GothamBold
+	button.TextSize = 12
+	button.TextColor3 = Color3.fromRGB(240, 226, 196)
+	button.TextStrokeTransparency = 0.4
+	button.TextYAlignment = Enum.TextYAlignment.Top
+	button.Text = string.upper(tab.section.name)
+	button.Visible = false
+	button.Parent = gui
+	button.Activated:Connect(function()
+		if state == "open" and not flipping and tab.section.firstSpread ~= spread then
+			goalSpread = tab.section.firstSpread
+			state = "switching"
+			targetOpen = 0
+			closeSounded = false
+		end
+	end)
+	tab.button = button
+end
+
+-- The render step lays the book out at full size; shrinkBook then squashes it towards the camera.
+local bookParts = {}
+-- The turning sheet is only parented to the book mid-flip, so it's gathered separately.
+local bookPieces = book:GetDescendants()
+table.insert(bookPieces, sheet)
+for _, d in sheet:GetDescendants() do
+	table.insert(bookPieces, d)
+end
+for _, d in bookPieces do
+	if d:IsA("BasePart") then
+		table.insert(bookParts, { part = d, size = d.Size })
+	elseif d:IsA("SurfaceGui") then
+		d.PixelsPerStud /= BOOK_SCALE
+	end
+end
+
+local function shrinkBook()
+	local origin = camera.CFrame.Position
+	for _, entry in bookParts do
+		local p = entry.part
+		p.Size = entry.size * BOOK_SCALE
+		p.CFrame = p.CFrame.Rotation + origin + (p.Position - origin) * BOOK_SCALE
+	end
+end
+
 local function finishClose()
 	if flipping then
 		finishFlip()
+	end
+	for _, tab in tabs do
+		tab.button.Visible = false
 	end
 	book.Parent = nil
 	state = "closed"
@@ -724,6 +924,13 @@ RunService:BindToRenderStep("JournalBook", Enum.RenderPriority.Camera.Value + 10
 		showSpread()
 	end
 
+	-- The camera script re-locks the mouse every frame; this runs after it. Walking and
+	-- the arrow keys are untouched, and the view turns while the right button is held.
+	if player:GetAttribute("ReadingJournal") then
+		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		UserInputService.MouseIconEnabled = true
+	end
+
 	raise = approach(raise, targetRaise, RAISE_RATE, dt)
 	openness = approach(openness, targetOpen, OPEN_RATE, dt)
 	if state == "opening" then
@@ -734,7 +941,19 @@ RunService:BindToRenderStep("JournalBook", Enum.RenderPriority.Camera.Value + 10
 		end
 		if openness > 0.97 then
 			state = "open"
-			showHint("← / →   turn page          G   close", true)
+			showHint("← / →   turn page          click a bookmark   jump          G   close", true)
+		end
+	elseif state == "switching" then
+		if not closeSounded and openness < 0.2 then
+			closeSounded = true
+			closeSound:Play()
+		end
+		-- Shut: swap to the bookmarked spread unseen, then reopen through the normal path.
+		if openness < 0.05 then
+			spread = goalSpread
+			goalSpread = nil
+			showSpread()
+			state = "opening"
 		end
 	elseif state == "closing" then
 		if not closeSounded and openness < 0.2 then
@@ -758,7 +977,9 @@ RunService:BindToRenderStep("JournalBook", Enum.RenderPriority.Camera.Value + 10
 
 	local lowered = 1 - raise
 	local t = os.clock()
+	pageShake = approach(pageShake, 0, 7, dt)
 	local sway = CFrame.Angles(math.sin(t * 0.9) * 0.008, math.sin(t * 0.6) * 0.006, math.sin(t * 0.7) * 0.008)
+		* CFrame.Angles(math.sin(t * 46) * 0.012 * pageShake, math.sin(t * 39) * 0.01 * pageShake, math.sin(t * 43) * 0.015 * pageShake)
 	-- Locked to the camera so the spread stays centred. While shut the book is
 	-- slid half a page left so the closed book, not the spine, is what's centred.
 	local root = camera.CFrame
@@ -785,16 +1006,24 @@ RunService:BindToRenderStep("JournalBook", Enum.RenderPriority.Camera.Value + 10
 			* CFrame.new(s.side * (PAGE_W / 2 + outward), -0.05 - 0.03 - s.layer * 0.004, outward * 1.4)
 			* PAGE_TURN
 	end
+	local reading = sectionAt(spread)
 	for _, tab in tabs do
 		local frame = tab.side > 0 and root * CFrame.new(0, 0.05, 0) or fold
+		tab.lift = approach(tab.lift, tab.section == reading and 0.05 or 0, 14, dt)
 		-- Tucked just under the top edge so only the coloured tip shows above the page.
-		tab.part.CFrame = frame * CFrame.new(tab.side * tab.x, -0.07, -(PAGE_H / 2 + 0.03))
+		tab.part.CFrame = frame * CFrame.new(tab.side * tab.x, -0.07, -(PAGE_H / 2 + 0.03 + tab.lift))
+		tab.button.Visible = state == "open"
+		if tab.button.Visible then
+			local tip = camera:WorldToViewportPoint(tab.part.CFrame:PointToWorldSpace(Vector3.new(0, 0, -0.11)))
+			tab.button.Position = UDim2.fromOffset(tip.X, tip.Y - 26)
+		end
 	end
 	if sheet.Parent then
 		local sheetCf = hinge * CFrame.Angles(0, 0, flipAngle) * CFrame.new(PAGE_W / 2, 0.004, 0) * PAGE_TURN
 		sheet.CFrame = sheetCf * CFrame.new(0, 0.001, 0)
 		sheetBackPart.CFrame = sheetCf * CFrame.new(0, -0.001, 0) * CFrame.Angles(0, math.pi, 0)
 	end
+	shrinkBook()
 end)
 
 local function setFocus(on)
@@ -807,7 +1036,7 @@ end
 
 -- Page turns while the book is up. Only the arrow keys are taken, so WASD still walks.
 local function onBookInput(_, inputState, input)
-	if inputState == Enum.UserInputState.Begin then
+	if inputState == Enum.UserInputState.Begin and state ~= "switching" then
 		if input.KeyCode == Enum.KeyCode.Right then
 			flip(1)
 		elseif input.KeyCode == Enum.KeyCode.Left then
@@ -836,6 +1065,9 @@ local function holdInput(on)
 	end
 end
 
+-- Tells the server, which floats a book icon over your head for other players.
+local readRemote = ReplicatedStorage:WaitForChild("JournalRead")
+
 local function openBook()
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
@@ -851,6 +1083,7 @@ local function openBook()
 	state = "opening"
 	targetRaise, targetOpen = 1, 0
 	player:SetAttribute("ReadingJournal", true)
+	readRemote:FireServer(true)
 	holdInput(true)
 	setFocus(true)
 end
@@ -863,7 +1096,11 @@ local function closeBook(instant)
 	targetOpen = 0
 	closeSounded = openness < 0.2
 	showHint(nil, false)
+	goalSpread = nil
+	-- Back to the crosshair dot (Camera.client hides the system cursor); it re-locks the mouse itself.
+	UserInputService.MouseIconEnabled = false
 	player:SetAttribute("ReadingJournal", false)
+	readRemote:FireServer(false)
 	holdInput(false)
 	setFocus(false)
 	if instant then

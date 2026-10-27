@@ -9,7 +9,11 @@
 --   CargoLift.SendSeq/SendAt  bumped when a trip starts, with the server time it started
 --   Elevator.CargoTripsLeft   trips remaining (lamps, gate)
 -- plus the timing attributes below, so both sides agree on the schedule.
+--
+-- Delivered items pay their Value into the Player "Money" attribute of whoever loaded
+-- them (the item's Owner). It lives for the session only; Journal.client shows it.
 
+local Players = game:GetService("Players")
 local ServerStorage = game:GetService("ServerStorage")
 
 local MAX_TRIPS = 3
@@ -84,8 +88,12 @@ local function findItem(player)
 	return nil
 end
 
+-- Floor items carry a RestOffset from their bottom centre (see Levels).
 local function restOn(p, surface)
-	if p.Shape == Enum.PartType.Cylinder then
+	local offset = p:GetAttribute("RestOffset")
+	if offset then
+		p.CFrame = surface * offset
+	elseif p.Shape == Enum.PartType.Cylinder then
 		p.CFrame = surface * CFrame.new(0, p.Size.X / 2, 0) * CFrame.Angles(0, 0, math.pi / 2)
 	else
 		p.CFrame = surface * CFrame.new(0, p.Size.Y / 2, 0)
@@ -107,6 +115,7 @@ loadPrompt.Triggered:Connect(function(player)
 	item.Anchored = true
 	item.CanCollide = false
 	item:SetAttribute("ScavengedLevel", tool:GetAttribute("ScavengedLevel"))
+	item:SetAttribute("Owner", player.UserId)
 	restOn(item, slots[#loaded + 1].CFrame * CFrame.Angles(0, math.rad(math.random(-25, 25)), 0))
 	item.Parent = car
 	table.insert(loaded, item)
@@ -162,6 +171,10 @@ local function send()
 	local cargo = table.clone(loaded)
 	table.clear(loaded)
 	for _, item in cargo do
+		local owner = Players:GetPlayerByUserId(item:GetAttribute("Owner") or 0)
+		if owner then
+			owner:SetAttribute("Money", (owner:GetAttribute("Money") or 0) + (item:GetAttribute("Value") or 0))
+		end
 		deliver(item)
 	end
 	updateValue()

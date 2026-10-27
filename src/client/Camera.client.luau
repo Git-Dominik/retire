@@ -630,14 +630,15 @@ RunService:BindToRenderStep("HotelCameraFX", Enum.RenderPriority.Camera.Value + 
 		pitch, yaw = targetCFrame:ToEulerAnglesYXZ()
 	end
 	local reading = player:GetAttribute("ReadingJournal")
-	readBlend += ((reading and 1 or 0) - readBlend) * math.min(dt * 5, 1)
+	-- Eases back out quicker than it eases in, so you can look up soon after shutting the journal.
+	readBlend += ((reading and 1 or 0) - readBlend) * math.min(dt * (reading and 5 or 16), 1)
 	if reading and not readFromPitch then
 		readFromPitch = pitch
 	end
 	if readFromPitch then
 		pitch = readFromPitch + (math.rad(READ_PITCH) - readFromPitch) * readBlend
 		targetCFrame = CFrame.new(targetCFrame.Position) * CFrame.fromEulerAnglesYXZ(pitch, yaw, 0)
-		if not reading and readBlend < 0.01 then
+		if not reading and readBlend < 0.05 then
 			readFromPitch = nil
 		end
 	end

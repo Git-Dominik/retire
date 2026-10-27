@@ -425,7 +425,7 @@ end
 local function giveItem(player)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 or roomItem.Transparency > 0 then
+	if not humanoid or humanoid.Health <= 0 or not roomItem.TakePrompt.Enabled then
 		return
 	end
 
@@ -433,22 +433,32 @@ local function giveItem(player)
 	tool.Name = roomItemName
 	tool.CanBeDropped = false
 	tool:SetAttribute("ScavengedLevel", level)
+	-- The item part carries the rest of its model as welded children (see Levels).
 	local handle = roomItem:Clone()
 	handle.Name = "Handle"
-	handle:ClearAllChildren()
+	handle.TakePrompt:Destroy()
+	CollectionService:RemoveTag(handle, "ScavengeItem")
 	handle.Anchored = false
-	handle.CanCollide = false
 	handle.Massless = true
 	handle.Parent = tool
 
 	-- The original stays in the room, hidden, and comes back if the carrier dies or leaves.
 	-- Loading it into the cargo lift marks the tool Stored, so it stays gone.
 	local item, prompt = roomItem, roomItem.TakePrompt
-	item.Transparency = 1
+	local function setShown(shown)
+		local parts = item:GetDescendants()
+		table.insert(parts, item)
+		for _, p in parts do
+			if p:IsA("BasePart") then
+				p.Transparency = shown and (p:GetAttribute("ShownTransparency") or 0) or 1
+			end
+		end
+	end
+	setShown(false)
 	prompt.Enabled = false
 	tool.Destroying:Connect(function()
 		if not tool:GetAttribute("Stored") and item.Parent then
-			item.Transparency = 0
+			setShown(true)
 			prompt.Enabled = true
 		end
 	end)

@@ -7,29 +7,43 @@
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
+-- value is what the item pawns for (dollars). Floors also spawn these, cheap ones
+-- far more often than dear ones (see Levels).
 local ITEMS = {
-	Camera = { name = "Camera", model = "Camera" },
+	Camera = { name = "Camera", model = "Camera", value = 140 },
 	PocketWatch = {
 		name = "Pocket watch",
 		model = "PocketWatch",
+		value = 180,
 		rotation = CFrame.Angles(0, math.rad(25), 0),
 	},
-	MusicBox = { name = "Music box", model = "MusicBox" },
-	Radio = { name = "Radio", model = "Radio" },
-	Clock = { name = "Mantel clock", model = "Clock" },
-	Vase = { name = "Vase", model = "Vase" },
-	Bottle = { name = "Bottle", model = "Bottle" },
-	Candlestick = { name = "Candlestick", model = "Candlestick" },
-	Figurine = { name = "Figurine", model = "Figurine" },
-	Compass = { name = "Compass", model = "Compass", rotation = CFrame.Angles(0, math.rad(-15), 0) },
-	RingBox = { name = "Ring box", model = "RingBox" },
+	MusicBox = { name = "Music box", model = "MusicBox", value = 90 },
+	Radio = { name = "Radio", model = "Radio", value = 220 },
+	Clock = { name = "Mantel clock", model = "Clock", value = 200 },
+	Vase = { name = "Vase", model = "Vase", value = 45 },
+	Bottle = { name = "Bottle", model = "Bottle", value = 15 },
+	Candlestick = { name = "Candlestick", model = "Candlestick", value = 25 },
+	Figurine = { name = "Figurine", model = "Figurine", value = 30 },
+	Compass = {
+		name = "Compass",
+		model = "Compass",
+		value = 60,
+		rotation = CFrame.Angles(0, math.rad(-15), 0),
+	},
+	RingBox = { name = "Ring box", model = "RingBox", value = 350 },
 	Wristwatch = {
 		name = "Wristwatch",
 		model = "Wristwatch",
+		value = 160,
 		rotation = CFrame.Angles(0, math.rad(90), 0),
 	},
-	Lighter = { name = "Lighter", model = "Lighter" },
-	Pendant = { name = "Pendant", model = "Pendant", rotation = CFrame.Angles(0, math.rad(-20), 0) },
+	Lighter = { name = "Lighter", model = "Lighter", value = 12 },
+	Pendant = {
+		name = "Pendant",
+		model = "Pendant",
+		value = 80,
+		rotation = CFrame.Angles(0, math.rad(-20), 0),
+	},
 }
 
 local StockItems = {}
@@ -42,6 +56,16 @@ end
 -- The definition for an ItemId, or nil if there's no such item.
 function StockItems.get(id)
 	return ITEMS[id]
+end
+
+-- Every ItemId.
+function StockItems.ids()
+	local ids = {}
+	for id in ITEMS do
+		table.insert(ids, id)
+	end
+	table.sort(ids)
+	return ids
 end
 
 -- The template model for an item (don't move it; clone it).
