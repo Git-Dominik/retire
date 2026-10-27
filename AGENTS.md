@@ -80,7 +80,9 @@ recording (`ChangeHistoryService:TryBeginRecording`):
 - `VolumetricBeam` tags, and the EmployeeRoom `Hinge` / `OpenAngle` /
   `SwingTime` / `Partner` attributes.
 - `Elevator.FloorSelector`: the floor-selector pedestal, saved in its *raised*
-  pose. Never give another model the name `Elevator`; scripts look it up with
+  pose. It vanished from the place once and had to be rebuilt; if it's
+  missing, Elevator.server hangs on `WaitForChild` and the elevator stops
+  working. Never give another model the name `Elevator`; scripts look it up with
   `WaitForChild("Elevator")`.
 
 - The store: an `AmbienceZone` part (StoreAmbience.client), the `StoreRadio`
@@ -117,6 +119,9 @@ rebuilt from transcript data.
   Connecting Rojo from an old checkout wiped scripts that existed only in
   Studio.
   - Keep every script in `src` and committed.
+  - This keeps happening: a collaborator's Rojo replaced Elevator.server with
+    an old copy. Before a playtest, diff every Studio script against `src`.
+    Merge any collaborator change found in Studio rather than overwriting it.
   - `ServerStorage.__Rojo_SessionLock` shows who is connected.
   - To recover, load an old place version with
     `game:GetObjects("http://www.roblox.com/asset/?id=89318278898862&version=N")`.
@@ -238,6 +243,8 @@ Tags and attributes:
   - `Busy`: the elevator is riding.
   - `Locked`: on a floor until `CargoLift.SendSeq` bumps. It isn't set when
     no cargo trips are left, or it would never unlock.
+  - `Raised` and `FacingUserId`: whether it's up and who its head follows.
+    The server decides these, so every player sees the same thing.
 - Turning the dial:
   - E is the knob's prompt and turns right, to a deeper floor.
   - Q is the knob prompt's `AltKey` and turns left. It goes through the
@@ -247,15 +254,21 @@ Tags and attributes:
     so mashing can't stack the 0.42s detent click. The knob prompt sets
     `SkipInteractSound`, because the dial's click is its feedback.
 - The lever's prompt sends the selected floor (hold 0.5s).
-- FloorSelector.client does all the motion, locally for each player:
-  - It rises within 4.5 studs and sinks past 5.5. The owner wants it close.
-  - It stays buried while `Locked`, `Busy`, or `Sent` (after the lever throw).
+- The server raises it while any player aboard is within 4.5 studs of the hatch
+  (the owner wants it close), and lowers it once nobody is within 5.5.
+  - It stays down while `Locked` or `Busy`, and from 1s after a send (time for
+    the lever throw) until the ride ends.
+  - The head follows the nearest player in range.
+  - Turn and send are ignored unless `Raised`.
+- FloorSelector.client animates all of that from the attributes, on every
+  client at its own frame rate (server-side `PivotTo` looks choppy):
   - Each moving group (Pedestal, Head, Pointer, Lever, LeafL, LeafR) is posed
     from an invisible pivot part, using offsets recorded from the built pose.
   - The server never writes prompt `Enabled`; the client owns it.
 - **Prompt `AltKey` attribute:** Camera.client draws a second key badge left
-  of the prompt's own key, and gives it the same click and press. The prompt's
-  script has to handle that key itself.
+  of the prompt's own key, and gives it the same click and press. Arms.client
+  reaches for the prompt on that key, as it does on a trigger. The prompt's
+  script has to handle the key's action itself.
 
 ### Cargo lift (Cargo.server / CargoLift.client)
 

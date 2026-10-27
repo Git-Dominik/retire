@@ -25,6 +25,7 @@ local Players = game:GetService("Players")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
 local camera = workspace.CurrentCamera
@@ -528,16 +529,42 @@ if player.Character then
 	stateFor(player.Character)
 end
 
--- Reach for anything you interact with: items, the tray, the journal.
-ProximityPromptService.PromptTriggered:Connect(function(prompt, who)
-	if who ~= player then
-		return
-	end
+local function reachForPrompt(prompt)
 	local parent = prompt.Parent
 	local target = (parent:IsA("Attachment") and parent.WorldPosition) or (parent:IsA("BasePart") and parent.Position)
 	if target then
 		reach(player.Character, target)
 		reachRemote:FireServer(target)
+	end
+end
+
+-- Reach for anything you interact with: items, the tray, the journal.
+ProximityPromptService.PromptTriggered:Connect(function(prompt, who)
+	if who == player then
+		reachForPrompt(prompt)
+	end
+end)
+
+-- A prompt's AltKey (the floor selector's Q) is a second way to use it, but it
+-- never triggers the prompt, so it's watched for here.
+local altPrompts = {}
+ProximityPromptService.PromptShown:Connect(function(prompt)
+	if prompt:GetAttribute("AltKey") then
+		altPrompts[prompt] = true
+	end
+end)
+ProximityPromptService.PromptHidden:Connect(function(prompt)
+	altPrompts[prompt] = nil
+end)
+UserInputService.InputBegan:Connect(function(input, processed)
+	if processed then
+		return
+	end
+	for prompt in altPrompts do
+		if input.KeyCode.Name == prompt:GetAttribute("AltKey") then
+			reachForPrompt(prompt)
+			return
+		end
 	end
 end)
 
