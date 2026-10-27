@@ -43,6 +43,18 @@ Only what isn't obvious from the code is listed here.
   - Never use two crossed full-length cores; their coplanar faces z-fight.
   - If you resize a bevelled part, delete its `_Strip` / `_Bevel` siblings and
     rebuild them.
+- The store's walls (`Grocery Store.PawnshopPaneling`) follow the elevator's
+  wall design (`Elevator.Walls`). Both use the same trim stack, colours and
+  bevel sizes, from the top down:
+  - crown and crown step, frieze, brass picture rail
+  - striped Fabric wallpaper
+  - dado with a brass cap
+  - wainscot panels with insets
+  - baseboard
+  Build new shop walls to match.
+  - Outer corners are closed by `<name>_Miter` CSG fills: each trim runs past
+    its end and is cut on the 45° line. Wherever two faces meet, add them, so
+    trim never stops short and leaves a notch.
 - Interaction prompts use Camera.client's popup, pinned to the object: a cream
   hand tapping it, with a key badge and the action text. Never use a
   bottom-of-screen prompt box.
