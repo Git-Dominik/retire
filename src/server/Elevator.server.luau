@@ -3,15 +3,15 @@
 --
 -- Loop: everyone boards -> doors shut -> the room outside is swapped during a short
 -- "ride" -> doors open on the next floor. From floor 1 on, the elevator only leaves
--- once that floor's item has been placed on the merchant's tray.
+-- once someone presses "Go down" on the button panel and everyone is back aboard.
+-- Scavenged items go home through the cargo lift (Cargo.server).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
+local ServerStorage = game:GetService("ServerStorage")
 local TweenService = game:GetService("TweenService")
 
 local Levels = require(script.Parent.Levels)
-local Library = require(script.Parent.Library)
 
 local MUSIC_ID = "rbxassetid://9042688121" -- "Waltz From The Past" (APM, solo cello)
 local HUM_ID = "rbxassetid://9112797280" -- "Industrial Presence 2" (Pro Sound Effects)
@@ -35,7 +35,7 @@ local MOVE_VOLUME = 0.225
 local elevator = workspace:WaitForChild("Elevator")
 local doorsFolder = elevator:WaitForChild("Doors")
 local floorPart = elevator.PrimaryPart
-local tray = elevator.Furniture.OfferingTray
+local buttonPlate = elevator.Fixtures.ButtonPlate
 
 -- ================= SOUNDS =================
 local function makeSound(parent, name, id, props)
@@ -173,7 +173,13 @@ for _, p in doorsFolder:GetChildren() do
 	end
 end
 
-elevator:SetAttribute("DoorState", "Open")
+-- The lobby starts with the doors shut; the call button outside opens them.
+for _, entry in doorParts do
+	for property, value in entry.closed do
+		entry.part[property] = value
+	end
+end
+elevator:SetAttribute("DoorState", "Closed")
 
 local function moveDoors(target)
 	local info = TweenInfo.new(DOOR_TIME, Enum.EasingStyle.Quad, Enum.EasingDirection.InOut)
@@ -262,35 +268,69 @@ end
 
 -- ================= FLOORS =================
 local level = 0
-local offered = false
 local descending = false
+-- On a floor the elevator waits for someone to press "Go down" on the button panel.
+local descendRequested = false
 local room, roomItem, roomItemName
-local shownOffering
 
 elevator:SetAttribute("Level", level)
 
 -- Floor-level CFrame at the elevator's outer door face, looking out of the elevator.
 local roomBase = floorPart.CFrame * CFrame.new(0, floorPart.Size.Y / 2, floorPart.Size.Z / 2)
 
-local offerPrompt = Instance.new("ProximityPrompt")
-offerPrompt.Name = "OfferPrompt"
-offerPrompt.ObjectText = "Merchant"
-offerPrompt.KeyboardKeyCode = Enum.KeyCode.E
-offerPrompt.MaxActivationDistance = 7
-offerPrompt.RequiresLineOfSight = false
-offerPrompt.Enabled = false
-offerPrompt.Parent = tray
+local downPrompt = Instance.new("ProximityPrompt")
+downPrompt.Name = "DownPrompt"
+downPrompt.ActionText = "Go down"
+downPrompt.ObjectText = "Elevator"
+downPrompt.KeyboardKeyCode = Enum.KeyCode.E
+downPrompt.MaxActivationDistance = 6
+downPrompt.RequiresLineOfSight = false
+downPrompt.Enabled = false
+downPrompt.Parent = buttonPlate
 
-local function findOffering(container)
-	if not container then
-		return nil
+downPrompt.Triggered:Connect(function()
+	if descending then
+		return
 	end
-	for _, tool in container:GetChildren() do
-		if tool:IsA("Tool") and tool:GetAttribute("OfferingLevel") == level then
-			return tool
+	descendRequested = true
+	downPrompt.Enabled = false
+end)
+
+-- ================= CALL BUTTON =================
+-- The call panel beside the lobby doors: the status light goes amber while the car
+-- "arrives", then the doors open. Only the lobby has one.
+local CALL_DELAY = 2.5
+local CALL_WAITING = Color3.fromRGB(255, 170, 60)
+local CALL_ARRIVED = Color3.fromRGB(110, 225, 95)
+
+local lobby = workspace:FindFirstChild("Grocery Store")
+local callPanel = lobby and lobby:FindFirstChild("Call Panel", true)
+if callPanel then
+	local statusLight = callPanel:FindFirstChild("Status Light")
+	local callPrompt = callPanel["Call Plate"]:FindFirstChildWhichIsA("ProximityPrompt")
+	callPrompt.ActionText = "Call"
+	callPrompt.ObjectText = "Elevator"
+	callPrompt.KeyboardKeyCode = Enum.KeyCode.E
+	callPrompt.RequiresLineOfSight = false
+
+	local calling = false
+	callPrompt.Triggered:Connect(function()
+		if calling or descending or level ~= 0 or elevator:GetAttribute("DoorState") ~= "Closed" then
+			return
 		end
-	end
-	return nil
+		calling = true
+		callPrompt.Enabled = false
+		if statusLight then
+			statusLight.Color = CALL_WAITING
+		end
+		task.wait(CALL_DELAY)
+		setDoors("Open")
+		if statusLight then
+			statusLight.Color = CALL_ARRIVED
+		end
+		callPrompt.Enabled = true
+		calling = false
+	end)
 end
 
 local function giveItem(player)
@@ -303,7 +343,7 @@ local function giveItem(player)
 	local tool = Instance.new("Tool")
 	tool.Name = roomItemName
 	tool.CanBeDropped = false
-	tool:SetAttribute("OfferingLevel", level)
+	tool:SetAttribute("ScavengedLevel", level)
 	local handle = roomItem:Clone()
 	handle.Name = "Handle"
 	handle:ClearAllChildren()
@@ -313,11 +353,12 @@ local function giveItem(player)
 	handle.Parent = tool
 
 	-- The original stays in the room, hidden, and comes back if the carrier dies or leaves.
+	-- Loading it into the cargo lift marks the tool Stored, so it stays gone.
 	local item, prompt = roomItem, roomItem.TakePrompt
 	item.Transparency = 1
 	prompt.Enabled = false
 	tool.Destroying:Connect(function()
-		if not offered and item.Parent then
+		if not tool:GetAttribute("Stored") and item.Parent then
 			item.Transparency = 0
 			prompt.Enabled = true
 		end
@@ -327,39 +368,17 @@ local function giveItem(player)
 	humanoid:EquipTool(tool)
 end
 
-offerPrompt.Triggered:Connect(function(player)
-	if offered or descending then
-		return
-	end
-	local tool = findOffering(player.Character) or findOffering(player:FindFirstChild("Backpack"))
-	if not tool then
-		return
-	end
-	offered = true
-	offerPrompt.Enabled = false
-
-	shownOffering = tool.Handle:Clone()
-	shownOffering.Name = "Offering"
-	shownOffering.Anchored = true
-	shownOffering.Parent = elevator
-	Levels.rest(shownOffering, tray.CFrame * CFrame.new(0, tray.Size.Y / 2, 0))
-	tool:Destroy()
-end)
-
 local function clearLevel()
 	if room then
 		room:Destroy()
 		room = nil
 	end
-	if shownOffering then
-		shownOffering:Destroy()
-		shownOffering = nil
-	end
-	-- Anything still carried from the floor being left behind is gone.
+	-- Anything still carried from the floor being left behind is gone; only what's
+	-- loaded into the cargo lift (Cargo.server) makes it back to the store.
 	for _, player in Players:GetPlayers() do
 		for _, container in { player.Character, player:FindFirstChild("Backpack") } do
 			for _, tool in container and container:GetChildren() or {} do
-				if tool:IsA("Tool") and tool:GetAttribute("OfferingLevel") then
+				if tool:IsA("Tool") and tool:GetAttribute("ScavengedLevel") then
 					tool:Destroy()
 				end
 			end
@@ -368,8 +387,7 @@ local function clearLevel()
 end
 
 local function buildLevel()
-	local challenge
-	room, roomItem, roomItemName, challenge = Levels.build(level, roomBase)
+	room, roomItem, roomItemName = Levels.build(level, roomBase)
 
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "TakePrompt"
@@ -382,13 +400,6 @@ local function buildLevel()
 	prompt.Triggered:Connect(giveItem)
 
 	room.Parent = workspace
-	if challenge and challenge.kind == "library" then
-		Library.start(room, challenge)
-	end
-
-	offered = false
-	offerPrompt.ActionText = "Offer " .. roomItemName
-	offerPrompt.Enabled = true
 end
 
 -- The lobby spawn pad sits where the floor rooms go, so hide it once we leave.
@@ -412,7 +423,14 @@ Players.PlayerAdded:Connect(function(player)
 	player.CharacterAdded:Connect(onCharacter)
 end)
 
-local function hideLobbySpawn()
+local function hideLobby()
+	-- The grocery store is the lobby and sits right where the floor rooms are built,
+	-- so it's put away (not destroyed) once the elevator first leaves.
+	local store = workspace:FindFirstChild("Grocery Store")
+	if store then
+		store.Parent = ServerStorage
+	end
+
 	local spawn = workspace:FindFirstChild("SpawnLocation")
 	if not spawn then
 		return
@@ -431,12 +449,13 @@ local function descend()
 		return
 	end
 	descending = true
-	offerPrompt.Enabled = false
+	descendRequested = false
+	downPrompt.Enabled = false
 	setDoors("Closed")
 
 	clearLevel()
 	if level == 0 then
-		hideLobbySpawn()
+		hideLobby()
 	end
 	-- Clients shake the camera while this is set.
 	elevator:SetAttribute("Descending", true)
@@ -453,6 +472,7 @@ local function descend()
 	fade(music, 0, 3)
 	setDoors("Open")
 	descending = false
+	downPrompt.Enabled = true
 end
 
 local function isAboard(position)
@@ -485,7 +505,7 @@ task.spawn(function()
 		task.wait(0.25)
 		local ready = not descending
 			and elevator:GetAttribute("DoorState") == "Open"
-			and (level == 0 or offered)
+			and (level == 0 or descendRequested)
 			and everyoneAboard()
 		if not ready then
 			boardedSince = nil
@@ -503,12 +523,8 @@ local devRemote = Instance.new("RemoteEvent")
 devRemote.Name = "ElevatorDev"
 devRemote.Parent = ReplicatedStorage
 
-local function isDev(player)
-	return RunService:IsStudio() or player.UserId == game.CreatorId
-end
-
-devRemote.OnServerEvent:Connect(function(player, action)
-	if not isDev(player) or descending then
+devRemote.OnServerEvent:Connect(function(_player, action)
+	if descending then
 		return
 	end
 	if action == "Close" then
@@ -517,7 +533,5 @@ devRemote.OnServerEvent:Connect(function(player, action)
 		setDoors("Open")
 	elseif action == "Descend" then
 		descend()
-	elseif action == "Librarian" and Library.summon then
-		Library.summon()
 	end
 end)

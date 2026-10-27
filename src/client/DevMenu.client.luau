@@ -1,15 +1,10 @@
--- F2 dev menu. Only built in Studio or for the place owner; the server checks
--- again before acting on anything sent from here.
+-- F2 dev menu. Available to every player.
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 
 local player = Players.LocalPlayer
-if not (RunService:IsStudio() or player.UserId == game.CreatorId) then
-	return
-end
 
 local devRemote = ReplicatedStorage:WaitForChild("ElevatorDev")
 local elevator = workspace:WaitForChild("Elevator")
@@ -106,10 +101,7 @@ end)
 button("Descend (skip item)", 5, function()
 	devRemote:FireServer("Descend")
 end)
-button("Summon Librarian (floor 1)", 6, function()
-	devRemote:FireServer("Librarian")
-end)
-label("F2 to hide", 7, Enum.Font.Gotham, 11, Color3.fromRGB(110, 104, 92))
+label("F2 to hide", 6, Enum.Font.Gotham, 11, Color3.fromRGB(110, 104, 92))
 
 UserInputService.InputBegan:Connect(function(input, gameProcessed)
 	if gameProcessed then

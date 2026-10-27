@@ -1,0 +1,176 @@
+-- The cargo lift built into the elevator's back wall. Players load scavenged items onto
+-- its car and press the send button; the car carries them up to the crate in the store.
+-- Only MAX_TRIPS trips are allowed per run.
+--
+-- This script owns the rules and the items. Everything that moves or makes a sound is
+-- animated by CargoLift.client from the attributes set here, so it runs at the
+-- player's frame rate instead of the network's:
+--   CargoLift.CargoValue      total value aboard (drum counter)
+--   CargoLift.SendSeq/SendAt  bumped when a trip starts, with the server time it started
+--   Elevator.CargoTripsLeft   trips remaining (lamps, gate)
+-- plus the timing attributes below, so both sides agree on the schedule.
+
+local ServerStorage = game:GetService("ServerStorage")
+
+local MAX_TRIPS = 3
+local TIMING = {
+	PressLead = 0.12, -- button press to gate starting down
+	GateTime = 0.45,
+	RideTime = 20, -- the long haul up; the car is out of sight after the first few seconds
+	TopPause = 1,
+	ReturnTime = 2.6,
+	Rise = 10, -- studs the car climbs before it's out of sight
+}
+
+local elevator = workspace:WaitForChild("Elevator")
+local lift = elevator:WaitForChild("CargoLift")
+local car = lift.Car
+local button = lift.SendButton
+local slots = car.Slots:GetChildren()
+table.sort(slots, function(a, b)
+	return a.Name < b.Name
+end)
+
+for name, value in TIMING do
+	lift:SetAttribute(name, value)
+end
+
+local tripsLeft = MAX_TRIPS
+local busy = false
+local loaded = {}
+
+elevator:SetAttribute("CargoTripsLeft", tripsLeft)
+lift:SetAttribute("CargoValue", 0)
+lift:SetAttribute("SendSeq", 0)
+
+local function updateValue()
+	local value = 0
+	for _, item in loaded do
+		value += item:GetAttribute("Value") or 0
+	end
+	lift:SetAttribute("CargoValue", value)
+end
+
+-- ================= PROMPTS =================
+local function makePrompt(parent, action, object)
+	local prompt = Instance.new("ProximityPrompt")
+	prompt.ActionText = action
+	prompt.ObjectText = object
+	prompt.KeyboardKeyCode = Enum.KeyCode.E
+	prompt.MaxActivationDistance = 7
+	prompt.RequiresLineOfSight = false
+	prompt.Parent = parent
+	return prompt
+end
+local loadPrompt = makePrompt(lift.LoadPoint, "Load item", "Cargo Lift")
+local sendPrompt = makePrompt(button.Bezel, "Send up", "Cargo Lift")
+
+local function refreshPrompts()
+	local open = not busy and tripsLeft > 0
+	loadPrompt.Enabled = open and #loaded < #slots
+	sendPrompt.Enabled = open and #loaded > 0
+end
+refreshPrompts()
+
+-- The equipped scavenged item first, else the first one in the backpack.
+local function findItem(player)
+	for _, container in { player.Character, player:FindFirstChild("Backpack") } do
+		for _, tool in container and container:GetChildren() or {} do
+			if tool:IsA("Tool") and tool:GetAttribute("ScavengedLevel") then
+				return tool
+			end
+		end
+	end
+	return nil
+end
+
+local function restOn(p, surface)
+	if p.Shape == Enum.PartType.Cylinder then
+		p.CFrame = surface * CFrame.new(0, p.Size.X / 2, 0) * CFrame.Angles(0, 0, math.pi / 2)
+	else
+		p.CFrame = surface * CFrame.new(0, p.Size.Y / 2, 0)
+	end
+end
+
+loadPrompt.Triggered:Connect(function(player)
+	if busy or tripsLeft == 0 or #loaded >= #slots then
+		return
+	end
+	local tool = findItem(player)
+	local handle = tool and tool:FindFirstChild("Handle")
+	if not handle then
+		return
+	end
+	-- The handle is a clone of the room item, so it carries its Value.
+	local item = handle:Clone()
+	item.Name = tool.Name
+	item.Anchored = true
+	item.CanCollide = false
+	item:SetAttribute("ScavengedLevel", tool:GetAttribute("ScavengedLevel"))
+	restOn(item, slots[#loaded + 1].CFrame * CFrame.Angles(0, math.rad(math.random(-25, 25)), 0))
+	item.Parent = car
+	table.insert(loaded, item)
+	-- Tells the elevator not to put the original back in the room.
+	tool:SetAttribute("Stored", true)
+	tool:Destroy()
+	updateValue()
+	refreshPrompts()
+end)
+
+-- ================= DELIVERY =================
+local function findStore()
+	return workspace:FindFirstChild("Grocery Store") or ServerStorage:FindFirstChild("Grocery Store")
+end
+
+-- Items land in the store's cargo crate, filling it in rows and then stacking up.
+-- With no crate around they're kept in ServerStorage so nothing is lost.
+local delivered = 0
+local function deliver(item)
+	local store = findStore()
+	local drop = store and store:FindFirstChild("CargoDrop", true)
+	if not drop then
+		local folder = ServerStorage:FindFirstChild("DeliveredCargo") or Instance.new("Folder")
+		folder.Name = "DeliveredCargo"
+		folder.Parent = ServerStorage
+		item.Parent = folder
+		return
+	end
+	local COLS, ROWS = 3, 2
+	local perLayer = COLS * ROWS
+	local layer = delivered // perLayer
+	local index = delivered % perLayer
+	local col, row = index % COLS, index // COLS
+	local x = (col - (COLS - 1) / 2) * drop.Size.X / COLS
+	local z = (row - (ROWS - 1) / 2) * drop.Size.Z / ROWS
+	local surface = drop.CFrame * CFrame.new(x, drop.Size.Y / 2 + layer * 0.6, z)
+	restOn(item, surface * CFrame.Angles(0, math.rad(math.random(0, 359)), 0))
+	item.Parent = drop.Parent
+	delivered += 1
+end
+
+local function send()
+	if busy or tripsLeft == 0 or #loaded == 0 then
+		return
+	end
+	busy = true
+	refreshPrompts()
+	lift:SetAttribute("SendAt", workspace:GetServerTimeNow())
+	lift:SetAttribute("SendSeq", lift:GetAttribute("SendSeq") + 1)
+
+	-- The car is out of sight at the top once the ride ends; the cargo is handed over then.
+	task.wait(TIMING.PressLead + TIMING.GateTime + TIMING.RideTime)
+	local cargo = table.clone(loaded)
+	table.clear(loaded)
+	for _, item in cargo do
+		deliver(item)
+	end
+	updateValue()
+	tripsLeft -= 1
+	elevator:SetAttribute("CargoTripsLeft", tripsLeft)
+
+	task.wait(TIMING.TopPause + TIMING.ReturnTime + TIMING.GateTime)
+	busy = false
+	refreshPrompts()
+end
+
+sendPrompt.Triggered:Connect(send)

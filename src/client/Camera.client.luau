@@ -3,6 +3,7 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local ProximityPromptService = game:GetService("ProximityPromptService")
 local StarterGui = game:GetService("StarterGui")
+local SoundService = game:GetService("SoundService")
 local TweenService = game:GetService("TweenService")
 
 local player = Players.LocalPlayer
@@ -100,103 +101,126 @@ sfCorner.CornerRadius = UDim.new(0, 3)
 sfCorner.Parent = staminaFill
 
 -- ================= PROMPT UI =================
-local promptGroup = Instance.new("CanvasGroup")
-promptGroup.Name = "Prompt"
-promptGroup.AnchorPoint = Vector2.new(0.5, 1)
-promptGroup.Position = UDim2.new(0.5, 0, 1, -122)
-promptGroup.Size = UDim2.fromOffset(256, 50)
-promptGroup.BackgroundColor3 = Color3.fromRGB(10, 10, 12)
-promptGroup.BackgroundTransparency = 0.28
-promptGroup.BorderSizePixel = 0
-promptGroup.GroupTransparency = 1
-promptGroup.Visible = false
-promptGroup.ZIndex = 9
-promptGroup.Parent = gui
+-- The prompt sits on the object itself: a cartoon hand tapping at it with the key
+-- badge underneath, and the action in small type beside the key.
+local HAND_IMAGE = "rbxassetid://6018832212" -- "Images/hand_cursor1600" decal 6018832303, a plain silhouette
+local CREAM = Color3.fromRGB(255, 228, 196)
+local INK = Color3.fromRGB(46, 30, 22)
+local POPUP_W, POPUP_H = 210, 140
+-- Pixel the hand's fingertip sits at inside the popup; the popup is shifted so this
+-- point lands on the object.
+local TIP = Vector2.new(34, 8)
 
-local pgCorner = Instance.new("UICorner")
-pgCorner.CornerRadius = UDim.new(0, 5)
-pgCorner.Parent = promptGroup
-local pgStroke = Instance.new("UIStroke")
-pgStroke.Color = Color3.fromRGB(148, 120, 64)
-pgStroke.Thickness = 1
-pgStroke.Transparency = 0.4
-pgStroke.Parent = promptGroup
+-- Drawn on the HUD and moved onto the object's screen position every frame.
+local popupGroup = Instance.new("CanvasGroup")
+popupGroup.Name = "PromptPopup"
+popupGroup.Size = UDim2.fromOffset(POPUP_W, POPUP_H)
+popupGroup.BackgroundTransparency = 1
+popupGroup.GroupTransparency = 1
+popupGroup.Visible = false
+popupGroup.ZIndex = 9
+popupGroup.Parent = gui
+local popupScale = Instance.new("UIScale")
+popupScale.Parent = popupGroup
+local popupTarget
+
+local hand = Instance.new("ImageLabel")
+hand.Name = "Hand"
+hand.BackgroundTransparency = 1
+hand.Image = HAND_IMAGE
+hand.ImageColor3 = CREAM
+hand.Size = UDim2.fromOffset(64, 64)
+-- The image's fingertip is near its top-left third; tilt it so it points up and in.
+hand.AnchorPoint = Vector2.new(0.36, 0.04)
+hand.Position = UDim2.fromOffset(TIP.X, TIP.Y)
+hand.Rotation = -18
+hand.ZIndex = 3
+hand.Parent = popupGroup
 
 local badge = Instance.new("Frame")
-badge.Position = UDim2.fromOffset(10, 10)
-badge.Size = UDim2.fromOffset(30, 30)
-badge.BackgroundColor3 = Color3.fromRGB(24, 22, 18)
-badge.BackgroundTransparency = 0.15
+badge.Name = "Key"
+badge.AnchorPoint = Vector2.new(0.5, 0)
+badge.Position = UDim2.fromOffset(TIP.X + 11, TIP.Y + 70)
+badge.Size = UDim2.fromOffset(42, 42)
+badge.BackgroundColor3 = CREAM
 badge.BorderSizePixel = 0
-badge.ZIndex = 10
-badge.Parent = promptGroup
+badge.ZIndex = 2
+badge.Parent = popupGroup
 local badgeCorner = Instance.new("UICorner")
-badgeCorner.CornerRadius = UDim.new(0, 4)
+badgeCorner.CornerRadius = UDim.new(0, 8)
 badgeCorner.Parent = badge
-local badgeStroke = Instance.new("UIStroke")
-badgeStroke.Color = Color3.fromRGB(160, 132, 74)
-badgeStroke.Thickness = 1
-badgeStroke.Transparency = 0.35
-badgeStroke.Parent = badge
+-- Fills the key from the bottom while a hold prompt is held down.
+local holdFill = Instance.new("Frame")
+holdFill.Name = "HoldFill"
+holdFill.AnchorPoint = Vector2.new(0, 1)
+holdFill.Position = UDim2.fromScale(0, 1)
+holdFill.Size = UDim2.fromScale(1, 0)
+holdFill.BackgroundColor3 = Color3.fromRGB(214, 168, 96)
+holdFill.BorderSizePixel = 0
+holdFill.ZIndex = 2
+holdFill.Parent = badge
+local holdCorner = Instance.new("UICorner")
+holdCorner.CornerRadius = UDim.new(0, 8)
+holdCorner.Parent = holdFill
 local keyLabel = Instance.new("TextLabel")
 keyLabel.Size = UDim2.fromScale(1, 1)
 keyLabel.BackgroundTransparency = 1
-keyLabel.Font = Enum.Font.GothamBold
-keyLabel.TextSize = 14
-keyLabel.TextColor3 = Color3.fromRGB(222, 202, 160)
+keyLabel.Font = Enum.Font.GothamBlack
+keyLabel.TextSize = 24
+keyLabel.TextColor3 = INK
 keyLabel.Text = "E"
-keyLabel.ZIndex = 11
+keyLabel.ZIndex = 3
 keyLabel.Parent = badge
 
 local actionLabel = Instance.new("TextLabel")
-actionLabel.Position = UDim2.fromOffset(52, 8)
-actionLabel.Size = UDim2.fromOffset(192, 18)
+actionLabel.AnchorPoint = Vector2.new(0, 0.5)
+actionLabel.Position = UDim2.new(0, TIP.X + 11 + 30, 0, TIP.Y + 70 + 21)
+actionLabel.Size = UDim2.fromOffset(140, 24)
 actionLabel.BackgroundTransparency = 1
 actionLabel.Font = Enum.Font.GothamBold
-actionLabel.TextSize = 12
-actionLabel.TextColor3 = Color3.fromRGB(214, 198, 166)
+actionLabel.TextSize = 18
+actionLabel.TextColor3 = CREAM
 actionLabel.TextXAlignment = Enum.TextXAlignment.Left
 actionLabel.Text = ""
-actionLabel.ZIndex = 10
-actionLabel.Parent = promptGroup
-
-local objectLabel = Instance.new("TextLabel")
-objectLabel.Position = UDim2.fromOffset(52, 25)
-objectLabel.Size = UDim2.fromOffset(192, 18)
-objectLabel.BackgroundTransparency = 1
-objectLabel.Font = Enum.Font.Garamond
-objectLabel.TextSize = 14
-objectLabel.TextColor3 = Color3.fromRGB(168, 158, 138)
-objectLabel.TextXAlignment = Enum.TextXAlignment.Left
-objectLabel.Text = ""
-objectLabel.ZIndex = 10
-objectLabel.Parent = promptGroup
+actionLabel.ZIndex = 3
+actionLabel.Parent = popupGroup
 
 local currentPrompt
 local promptTween
+local holdTween
 
 local function updatePromptText()
 	if not currentPrompt then
 		return
 	end
-	local action = string.upper(currentPrompt.ActionText)
-	if actionLabel.Text ~= action then
-		actionLabel.Text = action
+	if actionLabel.Text ~= currentPrompt.ActionText then
+		actionLabel.Text = currentPrompt.ActionText
 	end
-	if objectLabel.Text ~= currentPrompt.ObjectText then
-		objectLabel.Text = currentPrompt.ObjectText
+	local key = UserInputService:GetStringForKeyCode(currentPrompt.KeyboardKeyCode)
+	keyLabel.Text = key ~= "" and string.upper(key) or currentPrompt.KeyboardKeyCode.Name
+end
+
+local function setHold(fraction, time)
+	if holdTween then
+		holdTween:Cancel()
 	end
+	holdTween = TweenService:Create(holdFill, TweenInfo.new(time, Enum.EasingStyle.Linear), { Size = UDim2.fromScale(1, fraction) })
+	holdTween:Play()
 end
 
 local function showPrompt(prompt)
 	currentPrompt = prompt
 	updatePromptText()
-	promptGroup.Visible = true
+	setHold(0, 0)
+	popupTarget = prompt.Parent
+	popupGroup.Visible = true
 	if promptTween then
 		promptTween:Cancel()
 	end
-	promptTween = TweenService:Create(promptGroup, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { GroupTransparency = 0 })
+	popupScale.Scale = 0.7
+	promptTween = TweenService:Create(popupGroup, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { GroupTransparency = 0 })
 	promptTween:Play()
+	TweenService:Create(popupScale, TweenInfo.new(0.22, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
 end
 
 local function hidePrompt(prompt)
@@ -207,17 +231,62 @@ local function hidePrompt(prompt)
 	if promptTween then
 		promptTween:Cancel()
 	end
-	local hideTween = TweenService:Create(promptGroup, TweenInfo.new(0.14), { GroupTransparency = 1 })
+	local hideTween = TweenService:Create(popupGroup, TweenInfo.new(0.12), { GroupTransparency = 1 })
 	promptTween = hideTween
 	-- Completed is deferred, so it can land after another prompt has already been
 	-- shown; only hide if this fade-out finished and nothing replaced it.
 	hideTween.Completed:Connect(function(state)
 		if state == Enum.PlaybackState.Completed and promptTween == hideTween and not currentPrompt then
-			promptGroup.Visible = false
+			popupGroup.Visible = false
 		end
 	end)
 	promptTween:Play()
 end
+
+ProximityPromptService.PromptButtonHoldBegan:Connect(function(prompt)
+	if prompt == currentPrompt then
+		setHold(1, prompt.HoldDuration)
+	end
+end)
+ProximityPromptService.PromptButtonHoldEnded:Connect(function(prompt)
+	if prompt == currentPrompt then
+		setHold(0, 0.12)
+	end
+end)
+-- Every interaction gets a soft click, heard only by whoever triggered it.
+local interactSound = Instance.new("Sound")
+interactSound.Name = "Interact"
+interactSound.SoundId = "rbxassetid://9113817566" -- "Clothes Handling 2" (Pro Sound Effects)
+interactSound.Volume = 0.35
+interactSound.Parent = script
+
+ProximityPromptService.PromptTriggered:Connect(function(prompt)
+	if not prompt:GetAttribute("SkipInteractSound") then
+		SoundService:PlayLocalSound(interactSound)
+	end
+	if prompt ~= currentPrompt then
+		return
+	end
+	setHold(0, 0.12)
+	-- A quick press on the key so the trigger reads.
+	popupScale.Scale = 0.88
+	TweenService:Create(popupScale, TweenInfo.new(0.2, Enum.EasingStyle.Back, Enum.EasingDirection.Out), { Scale = 1 }):Play()
+end)
+
+-- Pins the popup to the object and makes the hand tap at it.
+RunService.RenderStepped:Connect(function()
+	if not popupGroup.Visible or not popupTarget then
+		return
+	end
+	local world = popupTarget:IsA("Attachment") and popupTarget.WorldPosition or popupTarget.Position
+	local point, onScreen = camera:WorldToViewportPoint(world)
+	popupGroup.Position = UDim2.fromOffset(point.X - TIP.X, point.Y - TIP.Y)
+	if not onScreen then
+		popupGroup.Position = UDim2.fromOffset(-1000, -1000)
+	end
+	local tap = math.max(0, math.sin(os.clock() * 5)) ^ 3
+	hand.Position = UDim2.fromOffset(TIP.X + tap * 4, TIP.Y + tap * 6)
+end)
 
 -- Soft outline around whatever the current prompt belongs to. A part that is a
 -- model's PrimaryPart (the lobby journal) outlines the whole model.
@@ -464,6 +533,8 @@ RunService.RenderStepped:Connect(function(dt)
 	local breath = math.sin(os.clock() * 1.25) * 0.009
 	local targetCrouch = crouchHeld and -1.55 or 0
 	crouchOffset += (targetCrouch - crouchOffset) * math.min(dt * 8, 1)
+	-- Arms.client lowers whatever you're holding by the same amount.
+	player:SetAttribute("CrouchOffset", crouchOffset)
 	sprintForward += ((sprinting and SPRINT_FORWARD or 0) - sprintForward) * math.min(dt * 4, 1)
 	humanoid.CameraOffset = Vector3.new(bobX, bobY + breath + crouchOffset, -sprintForward)
 
