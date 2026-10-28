@@ -20,6 +20,10 @@
 -- so walls can't clip through it.
 -- The first page shows the current day from the workspace DayNumber attribute
 -- (DayNightService), the same one ShopHUD shows, and redraws when it changes.
+-- Requests lists the item requests (QuestService, through QuestClient's copy of the
+-- ReplicatedStorage QuestList attribute): the active ones as a list with the client's
+-- headshot and the item, soonest due first, then what became of the latest finished ones.
+-- A page with a `fill` draws its own instances into the page's List frame.
 
 local CollectionService = game:GetService("CollectionService")
 local ContextActionService = game:GetService("ContextActionService")
@@ -72,6 +76,9 @@ local PAPER_AGED = Color3.fromRGB(168, 140, 102)
 local INK = Color3.fromRGB(46, 34, 26)
 local ACCENT = Color3.fromRGB(112, 30, 26)
 local RING = Color3.fromRGB(42, 38, 36)
+
+local HAND = Font.fromEnum(Enum.Font.Kalam)
+local HAND_BOLD = Font.new(HAND.Family, Enum.FontWeight.Bold)
 
 -- ================= TO-DO LIST =================
 -- Tasks are grouped by phase. The phase is the workspace attribute "Phase"
@@ -309,6 +316,237 @@ local function ledgerPage()
 	return "Ledger", #lines > 0 and table.concat(lines, "\n") or "Nothing sold yet."
 end
 
+-- ================= REQUESTS =================
+-- Active requests fill the first REQUEST_PAGES pages, REQUESTS_PER_PAGE each; the page
+-- after them lists the finished ones.
+local QuestClient = require(script.Parent:WaitForChild("QuestClient"))
+local Shared = ReplicatedStorage:WaitForChild("Shared")
+local ShopConfig = require(Shared:WaitForChild("ShopConfig"))
+local StockItems = require(Shared:WaitForChild("StockItems"))
+
+local REQUESTS_PER_PAGE = 3
+local REQUEST_HEIGHT = 110
+local REQUEST_PAGES = math.max(1, math.ceil(ShopConfig.MAX_ACTIVE_QUESTS / REQUESTS_PER_PAGE))
+local STOCK_INK = Color3.fromRGB(58, 86, 40)
+local STOCK_INK_HEX = "#3a5628"
+
+local function escape(text)
+	return (tostring(text):gsub("&", "&amp;"):gsub("<", "&lt;"):gsub(">", "&gt;"))
+end
+
+local function itemName(itemId)
+	local item = StockItems.get(itemId)
+	return item and item.name or tostring(itemId)
+end
+
+-- "Floor 2, Floor 3", from the item's floorIds and ShopConfig.FLOOR_NAMES.
+local function floorsText(itemId)
+	local item = StockItems.get(itemId)
+	local names = {}
+	for _, floor in item and item.floorIds or {} do
+		table.insert(names, ShopConfig.FLOOR_NAMES[floor] or `Floor {floor}`)
+	end
+	return #names > 0 and table.concat(names, ", ") or "nobody knows"
+end
+
+local function activeRequests()
+	local list = {}
+	for _, quest in QuestClient.list() do
+		if quest.Status == "Active" then
+			table.insert(list, quest)
+		end
+	end
+	table.sort(list, function(a, b)
+		if a.DueDay ~= b.DueDay then
+			return a.DueDay < b.DueDay
+		end
+		return a.QuestId < b.QuestId
+	end)
+	return list
+end
+
+local function rounded(gui, radius)
+	local corner = Instance.new("UICorner")
+	corner.CornerRadius = UDim.new(0, radius)
+	corner.Parent = gui
+end
+
+local function inked(gui, color)
+	local stroke = Instance.new("UIStroke")
+	stroke.Color = color
+	stroke.Thickness = 1.5
+	stroke.Transparency = 0.4
+	stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+	stroke.Parent = gui
+end
+
+-- A small picture of the item: its template from ReplicatedStorage.StockItems, seen from
+-- the front and a little above.
+local function itemIcon(parent, itemId)
+	local view = Instance.new("ViewportFrame")
+	view.Name = "Icon"
+	view.Position = UDim2.fromOffset(36, 38)
+	view.Size = UDim2.fromOffset(32, 32)
+	view.BackgroundColor3 = PAPER
+	view.BorderSizePixel = 0
+	view.Ambient = Color3.fromRGB(190, 176, 150)
+	view.LightColor = Color3.fromRGB(255, 236, 210)
+	view.LightDirection = Vector3.new(-1, -1, 1)
+	view.Parent = parent
+	rounded(view, 6)
+	inked(view, ACCENT)
+	local item = StockItems.get(itemId)
+	local folder = ReplicatedStorage:FindFirstChild("StockItems")
+	local template = item and folder and folder:FindFirstChild(item.model)
+	if not template then
+		return
+	end
+	local model = template:Clone()
+	model:PivotTo(CFrame.identity)
+	model.Parent = view
+	local center, size = model:GetBoundingBox()
+	local viewCamera = Instance.new("Camera")
+	viewCamera.FieldOfView = 30
+	-- Far enough back that the whole item fits the 30° view; the front is the pivot's LookVector.
+	local distance = size.Magnitude / 2 / math.tan(math.rad(15))
+	viewCamera.CFrame = CFrame.lookAt(center.Position + Vector3.new(0.5, 0.5, -1).Unit * distance, center.Position)
+	viewCamera.Parent = view
+	view.CurrentCamera = viewCamera
+end
+
+-- One active request: headshot with the item beside it, an "In stock" tag under them, and
+-- who, what, when, where and how much. Washed in red ink when it's due today.
+local function requestEntry(list, order, quest, day)
+	local dueToday = quest.DueDay <= day
+	local entry = Instance.new("Frame")
+	entry.Name = "Request"
+	entry.LayoutOrder = order
+	entry.Size = UDim2.new(1, 0, 0, REQUEST_HEIGHT)
+	entry.BackgroundColor3 = ACCENT
+	entry.BackgroundTransparency = dueToday and 0.86 or 1
+	entry.BorderSizePixel = 0
+	entry.Parent = list
+	rounded(entry, 6)
+
+	local face = Instance.new("ImageLabel")
+	face.Name = "Headshot"
+	face.Position = UDim2.fromOffset(4, 6)
+	face.Size = UDim2.fromOffset(52, 52)
+	face.BackgroundColor3 = PAPER_EDGE
+	face.BorderSizePixel = 0
+	face.Image = `rbxthumb://type=AvatarHeadShot&id={quest.ClientUserId}&w=150&h=150`
+	face.Parent = entry
+	rounded(face, 26)
+	inked(face, INK)
+	itemIcon(entry, quest.ItemId)
+
+	if quest.InStock then
+		local tag = Instance.new("TextLabel")
+		tag.Name = "InStock"
+		tag.Position = UDim2.fromOffset(2, 78)
+		tag.Size = UDim2.fromOffset(66, 22)
+		tag.BackgroundTransparency = 1
+		tag.FontFace = HAND_BOLD
+		tag.TextSize = 15
+		tag.TextColor3 = STOCK_INK
+		tag.Text = "In stock"
+		tag.Parent = entry
+		rounded(tag, 4)
+		inked(tag, STOCK_INK)
+	end
+
+	local left = quest.DueDay - day
+	local when = left <= 0 and "today!" or left == 1 and "1 day left" or `{left} days left`
+	local due = `Due: Day {quest.DueDay} ({when})`
+	if dueToday then
+		due = `<font color="{CHECK_INK}"><b>{due}</b></font>`
+	end
+	local details = Instance.new("TextLabel")
+	details.Name = "Details"
+	details.Position = UDim2.fromOffset(76, 4)
+	details.Size = UDim2.new(1, -78, 1, -4)
+	details.BackgroundTransparency = 1
+	details.FontFace = HAND
+	details.TextSize = 17
+	details.TextColor3 = INK
+	details.RichText = true
+	details.TextWrapped = true
+	details.TextXAlignment = Enum.TextXAlignment.Left
+	details.TextYAlignment = Enum.TextYAlignment.Top
+	details.Text = table.concat({
+		`<b>{escape(quest.ClientName)}</b>`,
+		`Wants: <b>{escape(itemName(quest.ItemId))}</b>`,
+		due,
+		`Found on: {floorsText(quest.ItemId)}`,
+		`<i>Active</i>  ·  pays <b>${quest.RewardPrice}</b>`,
+	}, "\n")
+	details.Parent = entry
+end
+
+-- Draws this page's share of the active requests. It runs on every page refresh, so the
+-- entries are only rebuilt when something on them changes.
+local function fillRequests(pageNumber)
+	return function(list)
+		local day = workspace:GetAttribute("DayNumber") or 1
+		local active = activeRequests()
+		local shown = {}
+		for i = (pageNumber - 1) * REQUESTS_PER_PAGE + 1, math.min(#active, pageNumber * REQUESTS_PER_PAGE) do
+			table.insert(shown, active[i])
+		end
+		local key = { pageNumber, day }
+		for _, quest in shown do
+			table.insert(key, `{quest.QuestId}:{quest.Status}:{quest.InStock}`)
+		end
+		local signature = table.concat(key, "|")
+		if list:GetAttribute("Signature") == signature then
+			return
+		end
+		list:SetAttribute("Signature", signature)
+		for _, child in list:GetChildren() do
+			if child.Name == "Request" then
+				child:Destroy()
+			end
+		end
+		for i, quest in shown do
+			requestEntry(list, i, quest, day)
+		end
+	end
+end
+
+local function requestsPage(pageNumber)
+	return {
+		render = function()
+			if pageNumber == 1 and #activeRequests() == 0 then
+				return "Requests",
+					"No requests right now.\n\nNow and then someone writes in wanting one thing in particular, and pays well for it. A new one may come at dawn."
+			end
+			return pageNumber == 1 and "Requests" or "Requests, cont.", ""
+		end,
+		fill = fillRequests(pageNumber),
+	}
+end
+
+-- What became of the latest finished requests, newest first.
+local function pastRequestsPage()
+	local lines = {}
+	for _, quest in QuestClient.list() do
+		if quest.Status ~= "Active" then
+			local outcome = quest.Status == "Completed"
+					and `<font color="{STOCK_INK_HEX}">Completed: paid ${quest.RewardPrice}</font>`
+				or `<font color="{CHECK_INK}">Failed: not sold on Day {quest.DueDay}</font>`
+			table.insert(lines, `<b>{escape(itemName(quest.ItemId))}</b> for {escape(quest.ClientName)}\n{outcome}`)
+		end
+	end
+	return "Past requests",
+		#lines > 0 and `<font size="19">{table.concat(lines, "\n\n")}</font>` or "Nothing settled yet."
+end
+
+local requestPages = {}
+for pageNumber = 1, REQUEST_PAGES do
+	table.insert(requestPages, requestsPage(pageNumber))
+end
+table.insert(requestPages, { render = pastRequestsPage })
+
 local SECTIONS = {
 	{
 		name = "Guides",
@@ -367,6 +605,13 @@ local SECTIONS = {
 		side = 1,
 		x = 0.68,
 		pages = { { render = moneyPage }, { render = ledgerPage } },
+	},
+	{
+		name = "Requests",
+		color = Color3.fromRGB(88, 98, 140),
+		side = -1,
+		x = 0.2,
+		pages = requestPages,
 	},
 }
 
@@ -552,9 +797,6 @@ local function label(gui, name, font, size, color)
 	return l
 end
 
-local HAND = Font.fromEnum(Enum.Font.Kalam)
-local HAND_BOLD = Font.new(HAND.Family, Enum.FontWeight.Bold)
-
 local function surface(p, face)
 	local gui = Instance.new("SurfaceGui")
 	gui.Face = face
@@ -638,6 +880,19 @@ local function pageGui(p, face, turned)
 	number.Size = UDim2.fromOffset(120, 24)
 	number.TextXAlignment = Enum.TextXAlignment.Center
 	number.TextTransparency = 0.35
+
+	-- Where a page with a `fill` puts its own instances (the Requests list), under the title.
+	local list = Instance.new("Frame")
+	list.Name = "List"
+	list.Position = UDim2.fromOffset(42, 100)
+	list.Size = UDim2.new(1, -84, 1, -150)
+	list.BackgroundTransparency = 1
+	list.Visible = false
+	list.Parent = gui
+	local layout = Instance.new("UIListLayout")
+	layout.SortOrder = Enum.SortOrder.LayoutOrder
+	layout.Padding = UDim.new(0, 4)
+	layout.Parent = list
 	return gui
 end
 
@@ -654,6 +909,10 @@ local function setPage(gui, index)
 	gui.Body.Text = body
 	gui.Rule.Visible = title ~= ""
 	gui.Number.Text = page and `— {index} —` or ""
+	gui.List.Visible = page ~= nil and page.fill ~= nil
+	if gui.List.Visible then
+		page.fill(gui.List)
+	end
 end
 
 local book = Instance.new("Model")

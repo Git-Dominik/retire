@@ -13,6 +13,16 @@
 --   Found (take it off the shelf) -> ToCounter (a free CounterSpot or the line) -> Place ->
 --   Pay (CounterService rings it up by itself) -> Leave
 -- Nobody has to be at the counter: the players' only job is keeping the shelves stocked.
+-- Normal customers never want an item an active request (QuestService) is waiting for.
+--
+-- Request clients: on a request's due day QuestService hands over a client to send in
+-- (takeDueVisit), who looks like the request's ClientUserId, has no hat and runs:
+--   Enter -> Browse for the requested item ("Requested: <item>") -> Found -> ToCounter ->
+--   Place -> Pay (a player holds Sell; CounterService.questCheckout) -> Leave
+-- Not on any shelf after a full search, they watch the shelves for QUEST_NOT_FOUND_WAIT
+-- (so an item stocked meanwhile still counts) before leaving. Leaving without the sale,
+-- for any reason (not found, the counter wait, dusk, despawning, an error), fails the
+-- request; the item goes back on a shelf as with any customer.
 -- Every step has a timeout and every customer a MAX_LIFETIME, so nobody gets stuck. A
 -- normal customer never leaves with stock: whatever they hold goes back on the shelf
 -- (CustomerUtil.restore) unless it was sold.
@@ -37,6 +47,7 @@ local CustomerAvatar = require(script.Parent:WaitForChild("CustomerAvatar"))
 local CounterService = require(script.Parent:WaitForChild("CounterService"))
 local ShoplifterService = require(script.Parent:WaitForChild("ShoplifterService"))
 local QuotaService = require(script.Parent:WaitForChild("QuotaService"))
+local QuestService = require(script.Parent:WaitForChild("QuestService"))
 
 local customers = {} -- [customer] = true
 local pending = 0 -- customers still being built
@@ -66,8 +77,12 @@ local function stockCount()
 	return n
 end
 
+local function shopOpen()
+	return isDay() and CustomerUtil.storeOpen() and not QuotaService.failed()
+end
+
 local function canSpawn()
-	return isDay() and CustomerUtil.storeOpen() and not QuotaService.failed() and stockCount() > 0
+	return shopOpen() and stockCount() > 0
 end
 
 -- One customer per unsold item, up to the per-player limit.
@@ -140,6 +155,10 @@ local function despawn(customer)
 	CounterService.release(customer)
 	customers[customer] = nil
 	customer.model:Destroy()
+	-- A request client gone without the sale has failed (a no-op once it's completed).
+	if customer.quest then
+		QuestService.fail(customer.quest)
+	end
 end
 
 -- Walks out through CustomerSpawn and despawns there (or wherever they are when the
@@ -178,15 +197,17 @@ local function shuffled(list)
 end
 
 -- What they've come in for: something on the shelves WANT_IN_STOCK_CHANCE of the time,
--- otherwise any item at all.
+-- otherwise any item at all. Never an item a request is waiting for, so it isn't sold out
+-- from under the request.
 local function pickWanted()
 	if math.random() < Config.WANT_IN_STOCK_CHANCE then
 		local stocked = {}
 		for _, furniture in CustomerUtil.shopFurniture() do
 			for _, slot in CustomerUtil.slotsOf(furniture) do
 				local model = CustomerUtil.itemIn(slot)
-				if model and not reserved[model] then
-					table.insert(stocked, model:GetAttribute("ItemId"))
+				local itemId = model and model:GetAttribute("ItemId")
+				if model and not reserved[model] and not QuestService.isRequested(itemId) then
+					table.insert(stocked, itemId)
 				end
 			end
 		end
@@ -194,7 +215,15 @@ local function pickWanted()
 			return stocked[math.random(1, #stocked)]
 		end
 	end
-	local ids = StockItems.ids()
+	local ids = {}
+	for _, id in StockItems.ids() do
+		if not QuestService.isRequested(id) then
+			table.insert(ids, id)
+		end
+	end
+	if #ids == 0 then
+		ids = StockItems.ids()
+	end
 	return ids[math.random(1, #ids)]
 end
 
@@ -215,10 +244,10 @@ local function holdInHand(customer, model)
 	CustomerUtil.attach(model, hand, CustomerUtil.handOffset(model))
 end
 
--- Visits each piece of shop furniture once, in a random order, looking for the wanted
--- item. Returns true holding it, or false having seen everything.
-local function browse(customer)
-	for _, furniture in shuffled(CustomerUtil.shopFurniture()) do
+-- Visits each piece of shop furniture once (or each in `list`), in a random order, looking
+-- for the wanted item. Returns true holding it, or false having seen everything.
+local function browse(customer, list)
+	for _, furniture in shuffled(list or CustomerUtil.shopFurniture()) do
 		local slots = CustomerUtil.slotsOf(furniture)
 		local stand = slots[1] and CustomerUtil.standPoint(furniture, slots[1])
 		if stand and CustomerUtil.walkTo(customer, stand) then
@@ -346,6 +375,84 @@ local function runNormal(customer)
 	CustomerUtil.say(customer, nil)
 end
 
+-- ================= REQUEST CLIENTS =================
+-- Shop furniture with the item on it that nobody is already after, or nil.
+local function furnitureHolding(itemId)
+	for _, furniture in CustomerUtil.shopFurniture() do
+		if findWanted(furniture, itemId) then
+			return furniture
+		end
+	end
+	return nil
+end
+
+-- A request client's visit (see the header): no haggling and no queue-jumping, just the
+-- requested item at the fixed reward, sold when a player holds Sell.
+local function runQuest(customer)
+	local quest = customer.quest
+	customer.state = "Enter"
+	CustomerUtil.walkTo(customer, CustomerUtil.entryPoint())
+
+	customer.state = "Decide"
+	customer.wantedId = quest.ItemId
+	local wanted = StockItems.get(quest.ItemId)
+	CustomerUtil.say(customer, `Requested: {wanted and wanted.name or quest.ItemId}`, "want")
+
+	customer.state = "Browse"
+	local found = browse(customer)
+	-- Players may still be stocking it: keep an eye on the shelves before giving up.
+	local deadline = os.clock() + Config.QUEST_NOT_FOUND_WAIT
+	while not found and os.clock() < deadline do
+		customer.state = "NotFound"
+		task.wait(1)
+		local furniture = furnitureHolding(quest.ItemId)
+		if furniture then
+			customer.state = "Browse"
+			found = browse(customer, { furniture })
+		end
+	end
+	if not found then
+		QuestService.fail(quest)
+		leaveUnsold(customer, "You didn't get it for me...", "sad")
+		return
+	end
+	CustomerUtil.say(customer, "That's the one!", "happy", 2)
+
+	customer.state = "ToCounter"
+	local spot = waitForSpot(customer)
+	if not spot then
+		QuestService.fail(quest)
+		leaveUnsold(customer, "I can't wait all day.", "annoyed")
+		return
+	end
+	CustomerUtil.say(customer, nil)
+	CustomerUtil.walkTo(customer, CustomerUtil.counterStand(spot.part), 12)
+	CustomerUtil.face(customer, spot.part.Position)
+
+	customer.state = "Place"
+	local carried = customer.carried
+	if not carried or not carried.model.Parent then
+		QuestService.fail(quest)
+		leaveUnsold(customer, "Huh. Where'd it go?", "sad")
+		return
+	end
+	CustomerUtil.tweenItem(carried.model, StockItems.restingCFrame(carried.itemId, spot.part))
+
+	customer.state = "Pay"
+	CustomerUtil.say(customer, `As agreed: ${quest.RewardPrice}`, "want")
+	if not CounterService.questCheckout(customer, spot, quest) then
+		QuestService.fail(quest)
+		leaveUnsold(customer, "I'll take my business elsewhere.", "annoyed")
+		return
+	end
+	customer.state = "Sold"
+	CustomerUtil.say(customer, "Exactly what I wanted. Thank you!", "happy")
+	dropItems(customer)
+	CounterService.release(customer)
+	task.wait(1.5)
+	CustomerUtil.say(customer, nil)
+end
+
 -- ================= SPAWNING =================
 local function makeHarmless(model, humanoid)
 	humanoid.MaxHealth = math.huge
@@ -409,41 +516,47 @@ local function facesInShop()
 	return faces
 end
 
-local function spawnCustomer()
+-- Sends in a customer: a random one, or the client of `quest` (a request due today).
+-- Returns whether they made it in.
+local function spawnCustomer(quest)
 	pending += 1
-	local entry = CustomerAvatar.pick(facesInShop())
+	local entry = quest and { userId = quest.ClientUserId, name = quest.ClientName }
+		or CustomerAvatar.pick(facesInShop())
 	local model, name, animations = CustomerAvatar.build(entry)
 	pending -= 1
 	local spawn = CustomerUtil.spawnPart()
-	-- Building yields; the day may have ended meanwhile.
-	if not model or not spawn or not canSpawn() then
+	-- Building yields; the day may have ended (or the request been settled) meanwhile.
+	local stillWanted = if quest then shopOpen() and quest.Status == "Active" else canSpawn()
+	if not model or not spawn or not stillWanted then
 		if model then
 			model:Destroy()
 		end
-		return
+		return false
 	end
 	local humanoid = model:FindFirstChildOfClass("Humanoid")
 	local root = model:FindFirstChild("HumanoidRootPart")
 	if not humanoid or not root then
 		model:Destroy()
-		return
+		return false
 	end
 
 	local day = workspace:GetAttribute("DayNumber") or 1
-	local shoplifter = math.random() < ShoplifterService.chance(day)
+	local shoplifter = not quest and math.random() < ShoplifterService.chance(day)
 	local customer = {
 		model = model,
 		humanoid = humanoid,
 		root = root,
 		userId = entry.userId,
 		shoplifter = shoplifter,
+		quest = quest,
 		pocket = {},
 		state = "Spawn",
 		spawnedAt = os.clock(),
 	}
 
 	model.Name = "Customer"
-	model:SetAttribute("DisplayName", name)
+	-- A request client keeps the name the journal shows, even on a fallback face.
+	model:SetAttribute("DisplayName", quest and quest.ClientName or name)
 	makeHarmless(model, humanoid)
 	if shoplifter then
 		ShoplifterService.addHat(model)
@@ -461,7 +574,11 @@ local function spawnCustomer()
 
 	customers[customer] = true
 	customer.thread = task.spawn(function()
-		local ok, err = pcall(shoplifter and ShoplifterService.run or runNormal, customer)
+		local run = if quest
+			then runQuest
+			elseif shoplifter then ShoplifterService.run
+			else runNormal
+		local ok, err = pcall(run, customer)
 		if not ok then
 			warn(`[Customers] {customer.state}: {err}`)
 			dropItems(customer)
@@ -469,12 +586,22 @@ local function spawnCustomer()
 		end
 		walkOut(customer)
 	end)
+	return true
 end
 
 local nextSpawnAt = os.clock() + Config.FIRST_SPAWN_DELAY
 task.spawn(function()
 	while true do
 		task.wait(0.5)
+		-- A request client due now comes in on top of the usual customers.
+		local quest = shopOpen() and QuestService.takeDueVisit()
+		if quest then
+			task.spawn(function()
+				if not spawnCustomer(quest) then
+					QuestService.visitNotStarted(quest)
+				end
+			end)
+		end
 		if not canSpawn() then
 			-- Opening up (dawn, the first item stocked) gives a moment before anyone arrives.
 			nextSpawnAt = math.max(nextSpawnAt, os.clock() + Config.FIRST_SPAWN_DELAY)

@@ -10,46 +10,103 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 -- value is what the item pawns for (dollars). Floors also spawn these, cheap ones
 -- far more often than dear ones (see Levels). basePrice is what it sells for in the
 -- shop: customers pay it at the counter (CounterService) and shoplifters cost it.
+-- floorIds lists the floors the item can be found on (names in ShopConfig.FLOOR_NAMES).
+-- QuestService only asks for items that have some, and the journal's Requests page shows
+-- them. Levels doesn't read them yet: any floor can still spawn any item.
+-- TODO: the floorIds below are placeholder guesses (cheap items shallow, dear ones deep);
+-- set them to where each item really turns up.
 local ITEMS = {
-	Camera = { name = "Camera", model = "Camera", value = 140, basePrice = 210 },
+	Camera = {
+		name = "Camera",
+		model = "Camera",
+		value = 140,
+		basePrice = 210,
+		floorIds = { 2, 3 },
+	},
 	PocketWatch = {
 		name = "Pocket watch",
 		model = "PocketWatch",
 		value = 180,
 		basePrice = 270,
 		rotation = CFrame.Angles(0, math.rad(25), 0),
+		floorIds = { 3, 4 },
 	},
-	MusicBox = { name = "Music box", model = "MusicBox", value = 90, basePrice = 135 },
-	Radio = { name = "Radio", model = "Radio", value = 220, basePrice = 330 },
-	Clock = { name = "Mantel clock", model = "Clock", value = 200, basePrice = 300 },
-	Vase = { name = "Vase", model = "Vase", value = 45, basePrice = 70 },
-	Bottle = { name = "Bottle", model = "Bottle", value = 15, basePrice = 25 },
-	Candlestick = { name = "Candlestick", model = "Candlestick", value = 25, basePrice = 40 },
-	Figurine = { name = "Figurine", model = "Figurine", value = 30, basePrice = 45 },
+	MusicBox = {
+		name = "Music box",
+		model = "MusicBox",
+		value = 90,
+		basePrice = 135,
+		floorIds = { 1, 2 },
+	},
+	Radio = {
+		name = "Radio",
+		model = "Radio",
+		value = 220,
+		basePrice = 330,
+		floorIds = { 3, 4, 5 },
+	},
+	Clock = {
+		name = "Mantel clock",
+		model = "Clock",
+		value = 200,
+		basePrice = 300,
+		floorIds = { 3, 4 },
+	},
+	Vase = { name = "Vase", model = "Vase", value = 45, basePrice = 70, floorIds = { 1, 2 } },
+	Bottle = { name = "Bottle", model = "Bottle", value = 15, basePrice = 25, floorIds = { 1 } },
+	Candlestick = {
+		name = "Candlestick",
+		model = "Candlestick",
+		value = 25,
+		basePrice = 40,
+		floorIds = { 1, 2 },
+	},
+	Figurine = {
+		name = "Figurine",
+		model = "Figurine",
+		value = 30,
+		basePrice = 45,
+		floorIds = { 1, 2 },
+	},
 	Compass = {
 		name = "Compass",
 		model = "Compass",
 		value = 60,
 		basePrice = 90,
 		rotation = CFrame.Angles(0, math.rad(-15), 0),
+		floorIds = { 2 },
 	},
-	RingBox = { name = "Ring box", model = "RingBox", value = 350, basePrice = 525 },
+	RingBox = {
+		name = "Ring box",
+		model = "RingBox",
+		value = 350,
+		basePrice = 525,
+		floorIds = { 4, 5 },
+	},
 	Wristwatch = {
 		name = "Wristwatch",
 		model = "Wristwatch",
 		value = 160,
 		basePrice = 240,
 		rotation = CFrame.Angles(0, math.rad(90), 0),
+		floorIds = { 2, 3 },
 	},
-	Lighter = { name = "Lighter", model = "Lighter", value = 12, basePrice = 20 },
+	Lighter = { name = "Lighter", model = "Lighter", value = 12, basePrice = 20, floorIds = { 1 } },
 	Pendant = {
 		name = "Pendant",
 		model = "Pendant",
 		value = 80,
 		basePrice = 120,
 		rotation = CFrame.Angles(0, math.rad(-20), 0),
+		floorIds = { 2, 3 },
 	},
-	Reimu = { name = "Reimu fumo", model = "Reimu", value = 120, basePrice = 180 },
+	Reimu = {
+		name = "Reimu fumo",
+		model = "Reimu",
+		value = 120,
+		basePrice = 180,
+		floorIds = { 2, 3 },
+	},
 }
 
 local StockItems = {}
@@ -58,6 +115,7 @@ for id, item in ITEMS do
 	item.id = id
 	item.rotation = item.rotation or CFrame.identity
 	item.basePrice = item.basePrice or item.value
+	item.floorIds = item.floorIds or {}
 end
 
 -- The definition for an ItemId, or nil if there's no such item.

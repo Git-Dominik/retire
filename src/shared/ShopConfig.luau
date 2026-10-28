@@ -1,7 +1,8 @@
 -- Tuning for the shop's day: the day/night clock, customers, the counter, shoplifters and
 -- the daily quota. Read by DayNightService, CustomerService, ShoplifterService,
 -- CounterService, QuotaService and CustomerAvatar on the server, and by DayNightClient,
--- ShopHUD and CustomerVisuals on the client. Times are in real seconds unless named as
+-- ShopHUD and CustomerVisuals on the client. The QUESTS section is read by QuestService,
+-- CustomerService and CounterService on the server and QuestClient and Journal.client. Times are in real seconds unless named as
 -- hours; distances are in studs; money is in dollars.
 
 return {
@@ -95,4 +96,33 @@ return {
 	MAX_STRIKES = 1,
 	EVALUATE_DELAY = 3, -- after dusk, before the day is judged
 	SUMMARY_TIME = 8, -- how long the end-of-day summary stays up
+
+	-- ================= QUESTS =================
+	-- A client asks for one item by a due day, comes in that morning and pays a fixed reward
+	-- if it's on the shelves (QuestService).
+	QUEST_PRICE_MULTIPLIER = 2.0, -- reward = basePrice times this, rounded
+	MAX_ACTIVE_QUESTS = 3,
+	QUEST_ISSUE_CHANCE = 0.6, -- at each dawn; day 1 always gets one
+	QUEST_DUE_DAYS = { 2, 4 }, -- due this many days after the day it's issued
+	-- Only items found on floors up to here are asked for. ReplicatedStorage's
+	-- DeepestFloorReached attribute replaces it when something sets it.
+	MAX_QUEST_FLOOR = 3,
+	-- When the client walks in on the due day, as a fraction of the way from dawn to dusk.
+	QUEST_VISIT_WINDOW = { 0, 1 / 3 },
+	QUEST_NOT_FOUND_WAIT = 10, -- after searching every piece, before giving up
+	QUEST_COUNTER_WAIT = 60, -- at the counter, for a player to hold Sell
+	QUEST_SELL_HOLD = 0.5,
+	QUEST_SELL_PROMPT_DISTANCE = 8,
+	QUEST_SELL_MAX_DISTANCE = 13, -- server-side reach check, a little past the prompt for lag
+	QUEST_RECENT_KEPT = 5, -- finished quests still listed in the journal
+	FLOOR_NAMES = {
+		[1] = "Floor 1",
+		[2] = "Floor 2",
+		[3] = "Floor 3",
+		[4] = "Floor 4",
+		[5] = "Floor 5",
+		[6] = "Floor 6",
+		[7] = "Floor 7",
+		[8] = "Floor 8",
+	},
 }
