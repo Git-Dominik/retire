@@ -97,15 +97,11 @@ local function evaluateDay(day)
 	end
 end
 
--- A finished sale: into the till, towards today's quota, and the seller's share.
-function QuotaService.recordSale(price, seller)
+-- A finished sale: into the till and towards today's quota.
+function QuotaService.recordSale(price)
 	add("ShopMoney", price)
 	add("DayEarnings", price)
 	add("DaySales", 1)
-	local share = math.floor(price * Config.SELLER_SHARE)
-	if share > 0 and seller and seller.Parent then
-		seller:SetAttribute("Money", (seller:GetAttribute("Money") or 0) + share)
-	end
 end
 
 function QuotaService.recordWalkout()

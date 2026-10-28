@@ -1,4 +1,4 @@
--- Tuning for the shop's day: the day/night clock, customers, haggling, shoplifters and
+-- Tuning for the shop's day: the day/night clock, customers, the counter, shoplifters and
 -- the daily quota. Read by DayNightService, CustomerService, ShoplifterService,
 -- CounterService, QuotaService and CustomerAvatar on the server, and by DayNightClient,
 -- ShopHUD and CustomerVisuals on the client. Times are in real seconds unless named as
@@ -35,7 +35,7 @@ return {
 	},
 
 	-- ================= CUSTOMERS =================
-	-- Nobody comes while the shop furniture has nothing on it.
+	-- There are never more customers than unsold items, so nobody comes to an empty shop.
 	SPAWN_INTERVAL = { 25, 45 }, -- seconds between customers
 	FIRST_SPAWN_DELAY = 8, -- after dawn, or after the first item is stocked, before the first one
 	MAX_CUSTOMERS = 4, -- in the shop at once with one player
@@ -61,18 +61,9 @@ return {
 	LEAVE_TIMEOUT = 25, -- walking out; despawned where they stand after this
 	MAX_LIFETIME = 360, -- anything longer and they're sent home
 
-	-- ================= HAGGLING =================
-	OFFER_RANGE = { 0.7, 0.9 }, -- opening offer, as a fraction of the base price
-	WILLING_TO_PAY = { 0.85, 1.15 }, -- hidden per customer, as a fraction of the base price
-	COUNTER_STEP = 10, -- percent of the base price per step
-	COUNTER_RANGE = { 50, 150 }, -- percent of the base price
-	CLOSE_COUNTER_MARGIN = 0.1, -- within this much above willing, they meet you halfway
-	PATIENCE = 2,
-	FIRST_RESPONSE_TIME = 60,
-	LATER_RESPONSE_TIME = 30,
-	NEGOTIATE_PROMPT_DISTANCE = 8,
-	MAX_NEGOTIATE_DISTANCE = 14, -- walking further than this releases the negotiation
-	SELLER_SHARE = 0, -- fraction of each sale paid to the selling player's Money
+	-- ================= COUNTER =================
+	-- Customers pay the item's base price by themselves; nobody needs to be at the counter.
+	CHECKOUT_TIME = { 2, 3.5 }, -- seconds from setting the item down to paying
 	ITEM_TWEEN_TIME = 0.3,
 
 	-- ================= SHOPLIFTERS =================

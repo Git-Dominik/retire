@@ -1,8 +1,8 @@
--- Draws the shop customers' speech bubbles and name tags, the offer bubble beside an item
+-- Draws the shop customers' speech bubbles and name tags, the price bubble beside an item
 -- on the counter, and the floating "+$" when something sells. Local and visual only:
 -- CustomerService and CounterService own every bit of state and publish it as:
 --   "Customer" tag on each NPC model: DisplayName, Bubble, BubbleMood attributes
---   "CounterSpot" tag on each counter spot part: OfferText attribute
+--   "CounterSpot" tag on each counter spot part: PriceText attribute
 --   SaleEffect remote (position, amount)
 -- The billboards live in this player's PlayerGui (adorned to the NPC's head or the spot),
 -- so they come and go with the tagged instances as they stream in and out.
@@ -131,7 +131,7 @@ for _, model in CollectionService:GetTagged("Customer") do
 	addCustomer(model)
 end
 
--- ================= OFFERS =================
+-- ================= PRICES =================
 local spotGuis = {}
 
 local function addSpot(spot)
@@ -139,7 +139,7 @@ local function addSpot(spot)
 		return
 	end
 	local gui = new("BillboardGui", {
-		Name = "OfferTag",
+		Name = "PriceTag",
 		Adornee = spot,
 		Size = UDim2.fromOffset(200, 40),
 		-- Low, just over the item, so it stays clear of the customer's name tag.
@@ -151,9 +151,9 @@ local function addSpot(spot)
 	spotGuis[spot] = gui
 	local _, setText = bubble(gui, Vector2.new(0.5, 0.5), UDim2.fromScale(0.5, 0.5))
 	local function refresh()
-		setText(spot:GetAttribute("OfferText"), "want")
+		setText(spot:GetAttribute("PriceText"), "want")
 	end
-	spot:GetAttributeChangedSignal("OfferText"):Connect(refresh)
+	spot:GetAttributeChangedSignal("PriceText"):Connect(refresh)
 	refresh()
 end
 

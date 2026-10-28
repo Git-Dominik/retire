@@ -9,7 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 -- value is what the item pawns for (dollars). Floors also spawn these, cheap ones
 -- far more often than dear ones (see Levels). basePrice is what it sells for in the
--- shop: customers haggle around it (CounterService) and shoplifters cost it.
+-- shop: customers pay it at the counter (CounterService) and shoplifters cost it.
 local ITEMS = {
 	Camera = { name = "Camera", model = "Camera", value = 140, basePrice = 210 },
 	PocketWatch = {

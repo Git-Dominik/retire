@@ -247,7 +247,7 @@ The server is authoritative. StockingClient only decides which Stock prompts
   and destroys it, and whoever built the tool puts the item down there.
   Dropped shop items are tagged `DroppedItem` and can be taken again.
 - Each item has a `value` (what the cargo lift pays the player) and a
-  `basePrice` (what it sells for in the shop; customers haggle around it).
+  `basePrice` (what customers pay for it at the counter).
 - The F2 dev menu spawns any item at your feet by ItemId or name.
 
 ### Elevator and floor selector (Elevator.server / FloorSelector.client)
@@ -338,11 +338,18 @@ has the details; this is the part that crosses scripts.
     read `DayNumber`.
 - **Customers** (CustomerService, with CustomerUtil, CustomerAvatar,
   ShoplifterService):
-  - They come by day, only while the store is in the world, the shop hasn't
-    failed, and at least one item is on the shop furniture.
+  - They come by day, only while the store is in the world and the shop hasn't
+    failed. There are never more customers than unsold items (on the shop
+    furniture or in a customer's hands), capped by the per-player limit.
   - They only browse furniture inside `AmbienceZone` and outside the
-    `StaffZone` / `StorageZone` parts. Shelving West 3/4 sit outside the
-    building and were reachable only by walking around.
+    `StaffZone` / `StorageZone` parts. Furniture with `StaffOnly = true` (the
+    shelves behind the counter) is skipped too. Shelving West 3/4 sit outside
+    the building and were reachable only by walking around.
+  - `CustomerUtil.walkTo` sweeps every leg of a path with spheres before
+    walking it. The navmesh cuts corners: paths clipped Wall Case East's
+    cabinet and the unnamed pillar (`Grocery Store.Part`) near the island. A
+    blocked leg gets a detour point beside the obstacle. With no clear route
+    the customer doesn't move and `walkTo` returns false.
   - Each one looks like a random friend of a player in the server. Hats are
     stripped, so the shoplifters' grey hat is the only one. The fallback
     presets are in ShopConfig.
@@ -352,10 +359,14 @@ has the details; this is the part that crosses scripts.
     `SetNetworkOwner(nil)`.
   - Clients see the `Customer` tag in `workspace.Customers`, with the
     `DisplayName`, `Bubble` and `BubbleMood` attributes (CustomerVisuals).
-- **Haggling** (CounterService): each `CounterSpot_<n>` gets a `NegotiatePrompt`
-  that only one player can hold at a time. ShopHUD's window talks over the
-  `Haggle` / `HaggleAction` remotes, and the server checks every action. A
-  customer's `WillingToPay` and `Patience` never leave the server.
+- **Checkout** (CounterService): the players' only job is restocking. The
+  owner scrapped haggling as too boring, so don't bring back a counter prompt
+  or a player behind the counter.
+  - A customer sets their item on a free `CounterSpot_<n>`, waits
+    `CHECKOUT_TIME` with the price in a bubble (the spot's `PriceText`), and
+    pays the item's `basePrice` by themselves.
+  - The sale runs in the customer's own thread, so one sent home mid-checkout
+    never pays.
 - **Quota** (QuotaService): ReplicatedStorage attributes `ShopMoney`,
   `DayEarnings`, `Quota`, `DaySales`, `DayWalkouts`, `DayStolenValue`,
   `Strikes`, `MaxStrikes` and `ShopFailed`. Nothing is saved.
@@ -363,8 +374,6 @@ has the details; this is the part that crosses scripts.
     client, and a missed quota is a strike.
   - At `MaxStrikes` the `ShopFailed` remote fires and `onShopFailed()` runs.
     It's an empty hook for the game-over screen.
-- If you're in the playtest while testing customers, the sales and haggles are
-  yours too. Check the server log before treating one as a bug.
 
 ### Other cross-script attributes
 

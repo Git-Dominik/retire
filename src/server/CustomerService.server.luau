@@ -1,21 +1,23 @@
 -- Customers for the pawn shop. During the day (workspace.Phase == "Day") a new one walks in
--- from CustomerSpawn every SPAWN_INTERVAL seconds, up to MAX_CUSTOMERS at once (more with
--- more players), while the store is in the world, the shop hasn't failed, and there's at
--- least one item on the shop furniture. At dusk
--- everyone drops what they're doing and walks out; at night nobody is here. If the store is
--- parked (the elevator went down) they vanish on the spot.
+-- from CustomerSpawn every SPAWN_INTERVAL seconds while the store is in the world and the
+-- shop hasn't failed. There are never more customers than unsold items (on the shop
+-- furniture or in a customer's hands), and never more than MAX_CUSTOMERS (more with more
+-- players), so nobody comes to an empty shop. At dusk everyone drops what they're doing
+-- and walks out; at night nobody is here. If the store is parked (the elevator went down)
+-- they vanish on the spot.
 --
 -- Each customer is a cosmetic NPC that looks like a random friend of someone in the server
 -- (CustomerAvatar), shows that friend's display name, and is either a shoplifter
 -- (ShoplifterService, odds rising each day) or a normal customer, run here:
 --   Enter -> Decide (want an item) -> Browse the shop furniture in a random order ->
 --   Found (take it off the shelf) -> ToCounter (a free CounterSpot or the line) -> Place ->
---   Offer / Negotiate (CounterService) -> Sold or NotSold -> Leave
+--   Pay (CounterService rings it up by itself) -> Leave
+-- Nobody has to be at the counter: the players' only job is keeping the shelves stocked.
 -- Every step has a timeout and every customer a MAX_LIFETIME, so nobody gets stuck. A
 -- normal customer never leaves with stock: whatever they hold goes back on the shelf
 -- (CustomerUtil.restore) unless it was sold.
 --
--- The server owns all of it; the hidden WillingToPay, Patience and type never leave it.
+-- The server owns all of it; whether a customer is a shoplifter never leaves it.
 -- NPCs are server-owned (SetNetworkOwner(nil)), can't be hurt, and are in the "Customers"
 -- collision group, which players can't touch. Clients only see:
 --   Model tagged "Customer" in workspace.Customers, with attributes DisplayName, Bubble and
@@ -45,25 +47,34 @@ local function isDay()
 	return workspace:GetAttribute("Phase") == "Day"
 end
 
--- Anything on the shop furniture for customers to come in for?
-local function hasStock()
+-- The shop's unsold stock: items on the shop furniture, plus the ones customers have
+-- picked up and are bringing to the counter.
+local function stockCount()
+	local n = 0
 	for _, furniture in CustomerUtil.shopFurniture() do
 		for _, slot in CustomerUtil.slotsOf(furniture) do
 			if CustomerUtil.itemIn(slot) then
-				return true
+				n += 1
 			end
 		end
 	end
-	return false
+	for customer in customers do
+		if customer.carried then
+			n += 1
+		end
+	end
+	return n
 end
 
 local function canSpawn()
-	return isDay() and CustomerUtil.storeOpen() and not QuotaService.failed() and hasStock()
+	return isDay() and CustomerUtil.storeOpen() and not QuotaService.failed() and stockCount() > 0
 end
 
+-- One customer per unsold item, up to the per-player limit.
 local function maxCustomers()
 	local extra = math.max(#Players:GetPlayers() - 1, 0)
 	return math.min(
+		stockCount(),
 		Config.MAX_CUSTOMERS + extra * Config.MAX_CUSTOMERS_PER_EXTRA_PLAYER,
 		Config.MAX_CUSTOMERS_CAP
 	)
@@ -85,9 +96,7 @@ local function dropItems(customer)
 	customer.carried = nil
 	if carried then
 		reserved[carried.model] = nil
-		local spot = customer.spot
-		local sold = spot and spot.outcome and spot.outcome.kind == "sold"
-		if sold then
+		if customer.sold then
 			carried.model:Destroy()
 		else
 			CustomerUtil.restore(carried.model, carried.itemId, carried.slot, carried.furniture)
@@ -277,13 +286,6 @@ local function waitForSpot(customer)
 	return nil
 end
 
-local GOODBYES = {
-	refused = { "Suit yourself.", "sad" },
-	patience = { "I'm done haggling.", "annoyed" },
-	timeout = { "Guess nobody's minding the shop.", "sad" },
-	aborted = { "Never mind.", "sad" },
-}
-
 local function leaveUnsold(customer, text, mood)
 	CustomerUtil.say(customer, text, mood)
 	dropItems(customer)
@@ -330,20 +332,18 @@ local function runNormal(customer)
 	end
 	CustomerUtil.tweenItem(carried.model, StockItems.restingCFrame(carried.itemId, spot.part))
 
-	customer.state = "Negotiate"
-	local outcome = CounterService.negotiate(customer, spot, carried.itemId)
-	if outcome.kind == "sold" then
-		customer.state = "Sold"
-		CustomerUtil.say(customer, "Thank you!", "happy")
-		dropItems(customer)
-		CounterService.release(customer)
-		task.wait(1.5)
-		CustomerUtil.say(customer, nil)
-	else
-		customer.state = "NotSold"
-		local goodbye = GOODBYES[outcome.kind] or GOODBYES.aborted
-		leaveUnsold(customer, goodbye[1], goodbye[2])
+	customer.state = "Pay"
+	if not CounterService.checkout(customer, spot, carried.itemId) then
+		leaveUnsold(customer, "Never mind.", "sad")
+		return
 	end
+	customer.state = "Sold"
+	customer.sold = true
+	CustomerUtil.say(customer, "Thank you!", "happy")
+	dropItems(customer)
+	CounterService.release(customer)
+	task.wait(1.5)
+	CustomerUtil.say(customer, nil)
 end
 
 -- ================= SPAWNING =================
@@ -437,7 +437,6 @@ local function spawnCustomer()
 		root = root,
 		userId = entry.userId,
 		shoplifter = shoplifter,
-		willingToPay = CustomerUtil.randomRange(Config.WILLING_TO_PAY),
 		pocket = {},
 		state = "Spawn",
 		spawnedAt = os.clock(),
