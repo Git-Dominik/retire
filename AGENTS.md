@@ -96,17 +96,32 @@ recording (`ChangeHistoryService:TryBeginRecording`):
   missing, Elevator.server hangs on `WaitForChild` and the elevator stops
   working. Never give another model the name `Elevator`; scripts look it up with
   `WaitForChild("Elevator")`.
+- `Elevator.ShaftWindow`: an invisible slab in the doorway between the iron
+  gate and the wooden doors, front face into the car. ElevatorShaft.client
+  runs the shaft wall through it during a ride.
+- `Elevator.Doors`: the wooden leaves (`DoorLeft*` / `DoorRight*`, saved
+  open, with `ClosedOffset` on the core part) run inside the car's front wall
+  and slide into it when open. Keep them there: the storage room's back wall
+  moved once and left them standing out in the room.
 
 - The store: an `AmbienceZone` part (StoreAmbience.client), the `StoreRadio`
   on the Service Counter (Radio.server), and the `CargoCrate` / `CargoDrop`
   beside the freight door.
   - Collaborators move the store, so don't hardcode its position.
+    - Its back wall still has to line up with the elevator, which never moves:
+      the `ElevatorEntrance` centred on the car doorway (x -11.9) and the
+      store's back wall in front of the car's front face (z -54.6). Moving the
+      store 1.7 studs towards the elevator once pushed its wall through the
+      car, hid the call panel and put the doors off-centre.
   - A decorative model named `Radio` also exists, so never look the radio up
     by that name.
   - `DoorTrigger`: an invisible part in the street doorway (east wall).
     DoorBell.client rings the entrance bell (the desk-bell asset pitched up;
     the owner rejected "Store Entry Bell 1") when a player walks through it
     from the street. Teleports (elevator arrival, respawn) stay silent.
+  - `MuffleZone`-tagged invisible parts where RadioMuffle.client muffles the
+    radio: `StorageZone` and `StaffZone` in the store, `ElevatorZone` in the
+    `Elevator` model.
   - `ElevatorStoreBack` is an older, doorless copy of the elevator. It has to
     keep that name.
   - `ElevatorEntrance`: the hotel-style surround on the storage room's back
@@ -251,6 +266,9 @@ Tags and attributes:
 
 - The elevator never moves. During a ride the room outside the doors is
   swapped. `travel(target)` goes to any floor 0–8, where 0 is the store (lobby).
+  - To sell the motion, ElevatorShaft.client streams a concrete shaft wall
+    past the doorway from the `RideDir` (1 down, -1 up, 0 still), `RideStart`
+    and `RideTime` attributes Elevator.server sets on the Elevator model.
   - While the elevator is down, the `Grocery Store` model is parked in
     ServerStorage and the lobby spawn is hidden.
   - Arriving back at 0 restores both.

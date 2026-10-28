@@ -6,6 +6,9 @@
 -- chosen floor. "STORE" on the selector brings the elevator back up to the lobby.
 -- Scavenged items go home through the cargo lift (Cargo.server).
 -- Each floor's item carries the ScavengeItem tag.
+-- During a ride the Elevator model carries RideDir (1 going down, -1 going up, 0 when
+-- still), RideStart (server time) and RideTime; ElevatorShaft.client runs the shaft
+-- wall past the doorway from those.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -406,8 +409,16 @@ if callPanel then
 	callPrompt.KeyboardKeyCode = Enum.KeyCode.E
 	callPrompt.RequiresLineOfSight = false
 
+	-- A short metal click from the button itself, every time it's pressed.
+	local pressSound = makeSound(callPanel["Call Plate"], "ButtonPress", "rbxassetid://9120097918", {
+		Volume = 1.6,
+		RollOffMinDistance = 12,
+		RollOffMaxDistance = 50,
+	})
+
 	local calling = false
 	callPrompt.Triggered:Connect(function()
+		pressSound:Play()
 		if calling or descending or level ~= 0 or elevator:GetAttribute("DoorState") ~= "Closed" then
 			return
 		end
@@ -426,19 +437,19 @@ if callPanel then
 	end)
 end
 
-local function giveItem(player)
+local function giveItem(player, item, itemName)
 	local character = player.Character
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	if not humanoid or humanoid.Health <= 0 or not roomItem.TakePrompt.Enabled then
+	if not humanoid or humanoid.Health <= 0 or not item.TakePrompt.Enabled then
 		return
 	end
 
 	local tool = Instance.new("Tool")
-	tool.Name = roomItemName
+	tool.Name = itemName
 	tool.CanBeDropped = false
 	tool:SetAttribute("ScavengedLevel", level)
 	-- The item part carries the rest of its model as welded children (see Levels).
-	local handle = roomItem:Clone()
+	local handle = item:Clone()
 	handle.Name = "Handle"
 	handle.TakePrompt:Destroy()
 	CollectionService:RemoveTag(handle, "ScavengeItem")
@@ -447,8 +458,9 @@ local function giveItem(player)
 	handle.Parent = tool
 
 	-- The original stays in the room, hidden, and comes back if the carrier dies or leaves.
-	-- Loading it into the cargo lift marks the tool Stored, so it stays gone.
-	local item, prompt = roomItem, roomItem.TakePrompt
+	-- Loading it into the cargo lift marks the tool Stored, so it stays gone. Dropping
+	-- it (StockingService sets DropAt) brings it back where it was dropped instead.
+	local prompt = item.TakePrompt
 	local function setShown(shown)
 		local parts = item:GetDescendants()
 		table.insert(parts, item)
@@ -462,6 +474,11 @@ local function giveItem(player)
 	prompt.Enabled = false
 	tool.Destroying:Connect(function()
 		if not tool:GetAttribute("Stored") and item.Parent then
+			local dropAt = tool:GetAttribute("DropAt")
+			if dropAt then
+				-- Floor items carry a RestOffset from their bottom centre (see Levels).
+				item.CFrame = dropAt * (item:GetAttribute("RestOffset") or CFrame.identity)
+			end
 			setShown(true)
 			prompt.Enabled = true
 		end
@@ -489,20 +506,25 @@ local function clearLevel()
 	end
 end
 
-local function buildLevel()
-	room, roomItem, roomItemName = Levels.build(level, roomBase)
-
+local function makeTakeable(item, itemName)
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "TakePrompt"
 	prompt.ActionText = "Take"
-	prompt.ObjectText = roomItemName
+	prompt.ObjectText = itemName
 	prompt.KeyboardKeyCode = Enum.KeyCode.E
 	prompt.MaxActivationDistance = 8
 	prompt.RequiresLineOfSight = false
-	prompt.Parent = roomItem
-	prompt.Triggered:Connect(giveItem)
+	prompt.Parent = item
+	prompt.Triggered:Connect(function(player)
+		giveItem(player, item, itemName)
+	end)
 	-- Journal.client points its world arrow at tagged items.
-	CollectionService:AddTag(roomItem, "ScavengeItem")
+	CollectionService:AddTag(item, "ScavengeItem")
+end
+
+local function buildLevel()
+	room, roomItem, roomItemName = Levels.build(level, roomBase)
+	makeTakeable(roomItem, roomItemName)
 
 	room.Parent = workspace
 end
@@ -569,10 +591,14 @@ local function travel(target)
 	local rideTime = math.min(DESCENT_TIME + PER_FLOOR_TIME * (math.abs(target - level) - 1), MAX_RIDE_TIME)
 	-- Clients shake the camera while this is set.
 	elevator:SetAttribute("Descending", true)
+	elevator:SetAttribute("RideTime", rideTime)
+	elevator:SetAttribute("RideStart", workspace:GetServerTimeNow())
+	elevator:SetAttribute("RideDir", target > level and 1 or -1)
 	setDial(target, rideTime)
 	fade(moveSound, MOVE_VOLUME, 1.2)
 	fade(music, MUSIC_VOLUME, 2)
 	task.wait(rideTime)
+	elevator:SetAttribute("RideDir", 0)
 	elevator:SetAttribute("Descending", false)
 
 	level = target
@@ -677,7 +703,22 @@ local devRemote = Instance.new("RemoteEvent")
 devRemote.Name = "ElevatorDev"
 devRemote.Parent = ReplicatedStorage
 
-devRemote.OnServerEvent:Connect(function(_player, action)
+devRemote.OnServerEvent:Connect(function(player, action, itemId)
+	-- Spawns a takeable copy of a stock item at the player's feet. It joins the floor
+	-- room so it's cleared with it; in the lobby it stays until the server restarts.
+	if action == "SpawnItem" then
+		local root = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+		local humanoid = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+		if not root or not humanoid or typeof(itemId) ~= "string" then
+			return
+		end
+		local feet = root.CFrame * CFrame.new(0, -(root.Size.Y / 2 + humanoid.HipHeight), -2)
+		local item = Levels.placeItem(room or workspace, itemId, feet)
+		if item then
+			makeTakeable(item, item.Name)
+		end
+		return
+	end
 	if descending then
 		return
 	end
