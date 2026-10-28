@@ -6,6 +6,9 @@
 -- chosen floor. "STORE" on the selector brings the elevator back up to the lobby.
 -- Scavenged items go home through the cargo lift (Cargo.server).
 -- Each floor's item carries the ScavengeItem tag.
+-- During a ride the Elevator model carries RideDir (1 going down, -1 going up, 0 when
+-- still), RideStart (server time) and RideTime; ElevatorShaft.client runs the shaft
+-- wall past the doorway from those.
 
 local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
@@ -406,8 +409,16 @@ if callPanel then
 	callPrompt.KeyboardKeyCode = Enum.KeyCode.E
 	callPrompt.RequiresLineOfSight = false
 
+	-- A short metal click from the button itself, every time it's pressed.
+	local pressSound = makeSound(callPanel["Call Plate"], "ButtonPress", "rbxassetid://9120097918", {
+		Volume = 1.6,
+		RollOffMinDistance = 12,
+		RollOffMaxDistance = 50,
+	})
+
 	local calling = false
 	callPrompt.Triggered:Connect(function()
+		pressSound:Play()
 		if calling or descending or level ~= 0 or elevator:GetAttribute("DoorState") ~= "Closed" then
 			return
 		end
@@ -580,10 +591,14 @@ local function travel(target)
 	local rideTime = math.min(DESCENT_TIME + PER_FLOOR_TIME * (math.abs(target - level) - 1), MAX_RIDE_TIME)
 	-- Clients shake the camera while this is set.
 	elevator:SetAttribute("Descending", true)
+	elevator:SetAttribute("RideTime", rideTime)
+	elevator:SetAttribute("RideStart", workspace:GetServerTimeNow())
+	elevator:SetAttribute("RideDir", target > level and 1 or -1)
 	setDial(target, rideTime)
 	fade(moveSound, MOVE_VOLUME, 1.2)
 	fade(music, MUSIC_VOLUME, 2)
 	task.wait(rideTime)
+	elevator:SetAttribute("RideDir", 0)
 	elevator:SetAttribute("Descending", false)
 
 	level = target

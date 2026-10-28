@@ -1,6 +1,7 @@
--- Employee room interactions: staff doors, storage door, lockers, fridge, light
--- switch, coffee machine and microwave. Everything runs on the server so every
--- player sees the same door positions and light state.
+-- Employee room interactions: storage door, lockers, fridge, light switch, coffee
+-- machine and microwave. Everything runs on the server so every player sees the
+-- same door positions and light state. (The staff room door is a push-through
+-- SwingDoor, animated by SwingDoors.client.)
 --
 -- Movable pieces are Models tagged with Hinge (CFrame), OpenAngle (degrees) and
 -- SwingTime, so this script never has to know where the room ended up. A pair of

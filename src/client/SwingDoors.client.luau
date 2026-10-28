@@ -1,4 +1,5 @@
--- Double-action swinging doors (the golden pair into the storage room). Nobody presses anything:
+-- Double-action swinging doors (the golden pair into the storage room, the oak
+-- pair at the shop's street entrance and the staff room door). Nobody presses anything:
 -- walking into the doorway pushes the leaves away from you, and they flap shut once it's clear.
 -- Client-side and local. Every client sees every character, so each one works out the same swing
 -- without a remote, and the motion stays smooth at the client's frame rate. The server never moves
@@ -41,17 +42,26 @@ local function newDoor(model)
 		side = 1,
 		open = false,
 	}
-	local _, size = model:GetBoundingBox()
-	door.halfWidth = size.X / 2
+	door.halfWidth = 0
+	-- Every leaf turns about its own hinge line, but in the door's frame: a leaf's saved pivot
+	-- may be rotated or flipped (the street door's are), and turning in that frame sent one
+	-- leaf into the shop while the other went out to the street.
+	local frame = model:GetPivot()
 	for _, child in model:GetChildren() do
 		if child:IsA("Model") then
 			local pivot = child:GetPivot()
-			local centre = pivot:PointToObjectSpace(child:GetBoundingBox().Position)
+			local hinge = CFrame.new(pivot.Position) * frame.Rotation
+			-- Which way the leaf hangs comes from where its hinge is: a hinge left of the doorway's
+			-- centre has its leaf to the right of it. (Not from the leaf's own parts: with streaming
+			-- they can still be loading when this runs, which used to flip a leaf the wrong way.)
+			local hingeX = frame:PointToObjectSpace(pivot.Position).X
+			door.halfWidth = math.max(door.halfWidth, math.abs(hingeX))
 			table.insert(door.leaves, {
 				model = child,
-				pivot = pivot,
-				-- +1 when the leaf hangs on the hinge's +X side.
-				hang = centre.X >= 0 and 1 or -1,
+				hinge = hinge,
+				rest = hinge:ToObjectSpace(pivot),
+				-- +1 when the leaf hangs on the hinge's +X side (in the door's frame).
+				hang = hingeX <= 0 and 1 or -1,
 			})
 		end
 	end
@@ -115,7 +125,7 @@ local function step(door, dt)
 
 	for _, leaf in door.leaves do
 		-- Turning by +a about Y carries a leaf hanging on +X towards -Z, so flip for the other side.
-		leaf.model:PivotTo(leaf.pivot * CFrame.Angles(0, door.angle * leaf.hang, 0))
+		leaf.model:PivotTo(leaf.hinge * CFrame.Angles(0, door.angle * leaf.hang, 0) * leaf.rest)
 	end
 end
 
