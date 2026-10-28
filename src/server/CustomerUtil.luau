@@ -1,6 +1,6 @@
 -- Shared plumbing for the shop's customer NPCs (CustomerService, ShoplifterService and
 -- CounterService all use it): the helper parts in the store, collision groups, walking
--- with PathfindingService, and moving stock items between shelf slots, hands and the
+-- with PathfindingService (every path swept for collisions first), and moving stock items between shelf slots, hands and the
 -- counter. Holds no customer state of its own.
 --
 -- Helper parts, all invisible, anchored and inside the Grocery Store model so they move
@@ -266,7 +266,7 @@ function CustomerUtil.updateFreeSlots(furniture)
 end
 
 -- Shop-floor furniture customers may browse: inside the shop (SHOP_ZONE), not in a back
--- room (STAFF_ZONES).
+-- room (STAFF_ZONES), and not marked StaffOnly (the shelves behind the service counter).
 function CustomerUtil.shopFurniture()
 	local shopZone = store:FindFirstChild(Config.SHOP_ZONE, true)
 	local zones = {}
@@ -280,7 +280,9 @@ function CustomerUtil.shopFurniture()
 	for _, furniture in CollectionService:GetTagged("StockFurniture") do
 		if furniture:IsDescendantOf(store) then
 			local slots = CustomerUtil.slotsOf(furniture)
-			local staff = #slots == 0 or (shopZone and not insidePart(shopZone, slots[1].Position))
+			local staff = #slots == 0
+				or furniture:GetAttribute("StaffOnly") == true
+				or (shopZone and not insidePart(shopZone, slots[1].Position))
 			for _, zone in zones do
 				if slots[1] and insidePart(zone, slots[1].Position) then
 					staff = true
@@ -461,32 +463,126 @@ local function flat(v)
 	return Vector3.new(v.X, 0, v.Z)
 end
 
--- Walks a customer to a point along a computed path (or straight there if no path is
--- found). Gives up after `timeout` seconds or when they stop making progress. Returns
--- whether they ended up within `reach` studs of it.
+-- The navmesh is coarse, so a computed path can cut a corner through a wall or a piece
+-- of furniture, and a customer walking it gets stuck. Each leg is swept with a sphere at
+-- knee and chest height against everything a customer collides with (the collision
+-- group leaves out players and other customers) before anyone walks it. A blocked leg
+-- gets a detour point beside whatever it hit, if one with both halves clear is near.
+local PATH_PROBES = { { height = 1.3, radius = 0.8 }, { height = 3.2, radius = 1 } }
+local AGENT_RADII = { 1.2, 2 } -- tried in order until a path comes out clear
+local DETOUR_OFFSETS = { 1.5, 2.5, 3.5 } -- studs from the hit point
+local MAX_DETOURS = 4 -- per route
+
+local sweepParams = RaycastParams.new()
+sweepParams.FilterType = Enum.RaycastFilterType.Exclude
+sweepParams.RespectCanCollide = true
+sweepParams.CollisionGroup = "Customers"
+
+-- What a customer walking the floor-level line from `from` to `to` would bump into
+-- first, or nil if they fit.
+local function legHit(from, to)
+	local delta = to - from
+	if delta.Magnitude < 0.05 then
+		return nil
+	end
+	sweepParams.FilterDescendantsInstances = { folder }
+	for _, probe in PATH_PROBES do
+		local origin = from + Vector3.new(0, probe.height, 0)
+		local hit = workspace:Spherecast(origin, probe.radius, delta, sweepParams)
+		if hit then
+			return hit
+		end
+	end
+	return nil
+end
+
+-- A floor point beside the obstacle that blocked from -> to, with both halves clear.
+local function detour(from, to, hit)
+	local along = flat(to - from)
+	if along.Magnitude < 0.05 then
+		return nil
+	end
+	local side = Vector3.new(-along.Z, 0, along.X).Unit
+	local base = Vector3.new(hit.Position.X, (from.Y + to.Y) / 2, hit.Position.Z)
+	for _, offset in DETOUR_OFFSETS do
+		for _, direction in { flat(hit.Normal), side, -side } do
+			if direction.Magnitude > 0.1 then
+				local floor = CustomerUtil.floorBelow(base + direction.Unit * offset, 2)
+				if
+					floor
+					and math.abs(floor.Y - base.Y) < 1
+					and not legHit(from, floor)
+					and not legHit(floor, to)
+				then
+					return floor
+				end
+			end
+		end
+	end
+	return nil
+end
+
+-- The points with detours added where a leg is blocked, or nil if one can't be fixed.
+local function cleared(feet, points)
+	local route = table.clone(points)
+	local from, i, detours = feet, 1, 0
+	while i <= #route do
+		local hit = legHit(from, route[i])
+		if hit then
+			detours += 1
+			local point = detours <= MAX_DETOURS and detour(from, route[i], hit)
+			if not point then
+				return nil
+			end
+			table.insert(route, i, point)
+		end
+		from = route[i]
+		i += 1
+	end
+	return route
+end
+
+-- Floor-level points to walk through to reach target, every leg checked clear, or nil if
+-- there's no clear way there.
+local function clearRoute(feet, target)
+	for _, radius in AGENT_RADII do
+		local path = PathfindingService:CreatePath({
+			AgentRadius = radius,
+			AgentHeight = 5,
+			AgentCanJump = false,
+			WaypointSpacing = 3,
+		})
+		local ok = pcall(function()
+			path:ComputeAsync(feet, target)
+		end)
+		if ok and path.Status == Enum.PathStatus.Success then
+			local points = {}
+			for i, waypoint in path:GetWaypoints() do
+				if i > 1 then
+					table.insert(points, waypoint.Position)
+				end
+			end
+			local route = #points > 0 and cleared(feet, points)
+			if route then
+				return route
+			end
+		end
+	end
+	-- Pathfinding can fail over short hops it should manage; a clear straight line will do.
+	return cleared(feet, { CustomerUtil.floorBelow(target, 1) or target })
+end
+
+-- Walks a customer to a point along a path checked for collisions first. With no clear
+-- way there they don't move at all. Gives up after `timeout` seconds or when they stop
+-- making progress. Returns whether they ended up within `reach` studs of it.
 function CustomerUtil.walkTo(customer, target, timeout, reach)
 	reach = reach or 2
 	local humanoid, root = customer.humanoid, customer.root
 	local deadline = os.clock() + (timeout or Config.WALK_TIMEOUT)
-	local path = PathfindingService:CreatePath({
-		AgentRadius = 1.2,
-		AgentHeight = 5,
-		AgentCanJump = false,
-		WaypointSpacing = 3,
-	})
-	local ok = pcall(function()
-		path:ComputeAsync(root.Position, target)
-	end)
-	local points = {}
-	if ok and path.Status == Enum.PathStatus.Success then
-		for i, waypoint in path:GetWaypoints() do
-			if i > 1 then
-				table.insert(points, waypoint.Position)
-			end
-		end
-	end
-	if #points == 0 then
-		table.insert(points, target)
+	local feet = root.Position - Vector3.new(0, humanoid.HipHeight + root.Size.Y / 2, 0)
+	local points = clearRoute(feet, target)
+	if not points then
+		return (flat(root.Position - target)).Magnitude <= reach
 	end
 
 	for i, point in points do
