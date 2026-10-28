@@ -180,6 +180,19 @@ rebuilt from transcript data.
   - Prompts off screen can't be triggered. Point the camera at the target
     before simulating E in a test.
   - The elevator call plate near *Rack West 1* also uses E.
+  - **Line of sight:** a prompt whose object sits behind its own trim never
+    shows if `RequiresLineOfSight` is true (the call plate's `ButtonRing`
+    blocks its ray, as does the selector pedestal). Prompt scripts set it to
+    `false` on purpose.
+    - Camera.client once forced `true` on every prompt in the workspace. That
+      hid the journal, call plate, floor selector, elevator chairs, bell and
+      Send up button. It now applies only to prompts under
+      `Grocery Store.Employee Area`, where through-the-wall use is a risk.
+    - A prompt in that area can opt out with the `IgnoreSight` attribute. The
+      journal, call plate and selector prompts set it too, so they stay safe if
+      the scope is widened.
+    - When a prompt's popup doesn't appear, raycast from the player's side to
+      the prompt's part and see what it hits before blaming the script.
 - **Tools:**
   - Setting `Tool.Grip` on the client does nothing because the weld is made on
     the server. Set Grip on the server.

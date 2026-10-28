@@ -11,7 +11,8 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local elevator = workspace:WaitForChild("Elevator")
 
-local STAND_POSITION = Vector3.new(-9, 0, -8)
+-- In the break room, against the wall under the cork board, left of the lockers.
+local STAND_POSITION = Vector3.new(13.8, 1.1, -49.55)
 
 local LEATHER = Color3.fromRGB(74, 40, 28)
 local PAPER = Color3.fromRGB(214, 200, 168)
@@ -34,8 +35,8 @@ end
 local stand = Instance.new("Model")
 stand.Name = "JournalStand"
 
--- Turned to face the spawn so the book reads as something left out for you.
-local base = CFrame.lookAt(STAND_POSITION, Vector3.new(0, STAND_POSITION.Y, 0))
+-- Back to the wall, facing into the room.
+local base = CFrame.lookAt(STAND_POSITION, STAND_POSITION + Vector3.new(0, 0, 1))
 part(stand, "Foot", Vector3.new(1.6, 0.2, 1.6), base * CFrame.new(0, 0.1, 0), WOOD, Enum.Material.Wood)
 part(stand, "Post", Vector3.new(0.3, 3.4, 0.3), base * CFrame.new(0, 1.9, 0), WOOD, Enum.Material.Wood)
 -- Lectern top, tilted toward the reader.
@@ -69,6 +70,7 @@ prompt.KeyboardKeyCode = Enum.KeyCode.E
 prompt.HoldDuration = 0.3
 prompt.MaxActivationDistance = 7
 prompt.RequiresLineOfSight = false
+prompt:SetAttribute("IgnoreSight", true) -- Camera.client forces sight on every other prompt
 prompt.Parent = book.Cover
 
 prompt.Triggered:Connect(function(player)
