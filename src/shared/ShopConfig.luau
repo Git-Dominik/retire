@@ -98,8 +98,8 @@ return {
 	SUMMARY_TIME = 8, -- how long the end-of-day summary stays up
 
 	-- ================= QUESTS =================
-	-- A client asks for one item by a due day, comes in that morning and pays a fixed reward
-	-- if it's on the shelves (QuestService).
+	-- A client asks for one item by a due day, comes to the counter that morning and pays a
+	-- fixed reward when a player hands it over (QuestService).
 	QUEST_PRICE_MULTIPLIER = 2.0, -- reward = basePrice times this, rounded
 	MAX_ACTIVE_QUESTS = 3,
 	QUEST_ISSUE_CHANCE = 0.6, -- at each dawn; day 1 always gets one
@@ -109,8 +109,7 @@ return {
 	MAX_QUEST_FLOOR = 3,
 	-- When the client walks in on the due day, as a fraction of the way from dawn to dusk.
 	QUEST_VISIT_WINDOW = { 0, 1 / 3 },
-	QUEST_NOT_FOUND_WAIT = 10, -- after searching every piece, before giving up
-	QUEST_COUNTER_WAIT = 60, -- at the counter, for a player to hold Sell
+	QUEST_COUNTER_WAIT = 60, -- at the counter, for a player to bring the item and hold Sell
 	QUEST_SELL_HOLD = 0.5,
 	QUEST_SELL_PROMPT_DISTANCE = 8,
 	QUEST_SELL_MAX_DISTANCE = 13, -- server-side reach check, a little past the prompt for lag

@@ -11,13 +11,16 @@
 -- the item (CustomerVisuals.client draws it).
 -- Remote: SaleEffect (server -> all clients) position and amount, for the floating "+$".
 --
--- Request clients (QuestService) are the one exception to paying by themselves: their
--- price is fixed at the request's RewardPrice, and questCheckout puts a "Sell" prompt
--- (QuestSellPrompt, hold QUEST_SELL_HOLD) on their spot for up to QUEST_COUNTER_WAIT. Any
--- player can hold it. The server checks the client still holds the spot with the item on
--- it and the player is within QUEST_SELL_MAX_DISTANCE, then completes the request and
--- pays, all without yielding, so the reward can only be paid once. The prompt goes with
--- the spot when the client is released.
+-- Request clients (QuestService) are the one exception to paying by themselves. They come
+-- straight to the counter and ask for the item there; a player fetches it (from the racks,
+-- or off the shop furniture with its Take prompt) and hands it over. questCheckout puts a
+-- "Sell" prompt (QuestSellPrompt, hold QUEST_SELL_HOLD, ItemId attribute) on their spot
+-- for up to QUEST_COUNTER_WAIT; StockingClient shows it only to a player holding that
+-- item. The server checks the client still holds the spot, the player is holding the
+-- requested item and is within QUEST_SELL_MAX_DISTANCE, then takes the tool (Sold), sets
+-- the item on the counter, completes the request and pays the fixed RewardPrice, all
+-- without yielding, so the reward can only be paid once. The prompt goes with the spot
+-- when the client is released.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -79,31 +82,38 @@ local function removeSellPrompt(spot)
 	spot.part:SetAttribute("PriceText", nil)
 end
 
--- Whether the player's Sell on this spot is a sale: the client is still at the spot, the
--- requested item is lying on it, and the player is close enough to reach it.
-local function canSell(player, customer, spot, quest)
+-- The requested item's tool, if the player can hand it over on this spot now: the client
+-- still holds the spot, and the player is alive, close enough and holding that item.
+local function handedItem(player, customer, spot, quest)
 	if spot.customer ~= customer or customer.gone or customer.sentHome then
-		return false
-	end
-	local carried = customer.carried
-	if not carried or carried.itemId ~= quest.ItemId or not carried.model.Parent then
-		return false
-	end
-	if (carried.model:GetPivot().Position - spot.part.Position).Magnitude > 4 then
-		return false
+		return nil
 	end
 	local character = player.Character
 	local root = character and character:FindFirstChild("HumanoidRootPart")
 	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-	return root ~= nil
-		and humanoid ~= nil
-		and humanoid.Health > 0
-		and (root.Position - spot.part.Position).Magnitude <= Config.QUEST_SELL_MAX_DISTANCE
+	local tool = character and character:FindFirstChildOfClass("Tool")
+	if not root or not humanoid or humanoid.Health <= 0 or not tool then
+		return nil
+	end
+	if
+		not tool:GetAttribute("ShopItem")
+		or tool:GetAttribute("Stocked")
+		or tool:GetAttribute("Sold")
+	then
+		return nil
+	end
+	if tool:GetAttribute("ItemId") ~= quest.ItemId then
+		return nil
+	end
+	if (root.Position - spot.part.Position).Magnitude > Config.QUEST_SELL_MAX_DISTANCE then
+		return nil
+	end
+	return tool
 end
 
--- A request client's sale: the item is on their spot at the fixed RewardPrice, and a player
--- holds Sell. Yields until then (returning the price) or until QUEST_COUNTER_WAIT runs out
--- or they lose the spot (returning nil).
+-- A request client's sale at the fixed RewardPrice. Yields until a player hands over the
+-- requested item (returning the price and the item, now lying on the spot) or until
+-- QUEST_COUNTER_WAIT runs out or they lose the spot (returning nil).
 function CounterService.questCheckout(customer, spot, quest)
 	local item = StockItems.get(quest.ItemId)
 	local price = quest.RewardPrice
@@ -112,27 +122,44 @@ function CounterService.questCheckout(customer, spot, quest)
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "QuestSellPrompt"
 	prompt.ActionText = "Sell"
-	prompt.ObjectText = item and item.name or quest.ItemId
+	prompt.ObjectText = `{item and item.name or quest.ItemId} for ${price}`
 	prompt.KeyboardKeyCode = Enum.KeyCode.E
 	prompt.HoldDuration = Config.QUEST_SELL_HOLD
 	prompt.MaxActivationDistance = Config.QUEST_SELL_PROMPT_DISTANCE
 	prompt.RequiresLineOfSight = true
+	-- StockingClient enables it for whoever holds this item.
+	prompt.Enabled = false
+	prompt:SetAttribute("ItemId", quest.ItemId)
 	prompt.Parent = spot.part
 	spot.prompt = prompt
 
-	local paid = false
+	local paid, sold = false, nil
 	prompt.Triggered:Connect(function(player)
-		if paid or not canSell(player, customer, spot, quest) then
-			return
-		end
+		local tool = not paid and handedItem(player, customer, spot, quest)
 		-- Nothing below yields, so a second trigger always sees paid.
-		if not QuestService.complete(quest) then
+		if not tool or not QuestService.complete(quest) then
 			return
 		end
 		paid = true
+		tool:SetAttribute("Sold", true)
+		tool:Destroy()
+		sold = StockItems.create(quest.ItemId)
+		if sold then
+			for _, d in sold:GetDescendants() do
+				if d:IsA("BasePart") then
+					d.Anchored = true
+					d.CanCollide = false
+					d.CanTouch = false
+				end
+			end
+			sold:PivotTo(StockItems.restingCFrame(quest.ItemId, spot.part))
+			sold.Parent = CustomerUtil.folder
+			CustomerUtil.setGroup(sold, "Customers")
+		end
 		-- Set here, not in the client's thread: if they're sent home this instant, the sold
 		-- item is still destroyed rather than put back on a shelf.
 		customer.sold = true
+		customer.carried = sold and { model = sold, itemId = quest.ItemId } or nil
 		QuotaService.recordSale(price)
 		saleRemote:FireAllClients(spot.part.Position + Vector3.new(0, 1.2, 0), price)
 		removeSellPrompt(spot)

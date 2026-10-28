@@ -12,9 +12,9 @@
 --
 -- On the due day CustomerService asks takeDueVisit() for a client to send in once the clock
 -- passes the request's visit hour (inside QUEST_VISIT_WINDOW of the day). The client
--- searches the shop; CounterService completes the request when a player holds Sell at the
--- counter. Anything else (not found, tired of waiting, despawned, or dusk on the due day)
--- fails it. Failing costs only the reward; it's never a strike.
+-- goes to the counter and asks; CounterService completes the request when a player hands
+-- the item over there with Sell. Anything else (tired of waiting, despawned, or dusk on the
+-- due day) fails it. Failing costs only the reward; it's never a strike.
 --
 -- Each request: QuestId, ClientUserId, ClientName, ItemId, IssuedDay, DueDay, RewardPrice,
 -- Status ("Active", "Completed" or "Failed") and InStock (the item is on the shop

@@ -3,7 +3,10 @@
 -- the pivot's LookVector). A slot's front faces out of its furniture, so the
 -- item ends up at slot.CFrame * rotation.
 --
--- Any item fits any slot: anything bigger than the slot is scaled down to fit.
+-- Items come in two sizes (the `size` field): "Small" (the default, up to 1 x 1 stud) and
+-- "Large" (up to 2 x 2), which only go in large slots (fits). Within that, anything
+-- bigger than its slot is scaled down to fit. Copies swap
+-- Glass for see-through plastic (see create), so they still show inside display cases.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
@@ -107,6 +110,34 @@ local ITEMS = {
 		basePrice = 180,
 		floorIds = { 2, 3 },
 	},
+
+	-- ================= LARGE =================
+	-- Up to 2 x 2 studs across. They only fit large slots (see fits), and on the floors they
+	-- only spawn on LargeItemSpawn points (Levels). TODO: placeholder floorIds, as above.
+	Gramophone = {
+		name = "Gramophone",
+		model = "Gramophone",
+		size = "Large",
+		value = 260,
+		basePrice = 390,
+		floorIds = { 2, 3 },
+	},
+	Typewriter = {
+		name = "Typewriter",
+		model = "Typewriter",
+		size = "Large",
+		value = 190,
+		basePrice = 285,
+		floorIds = { 1, 2 },
+	},
+	Suitcase = {
+		name = "Suitcase",
+		model = "Suitcase",
+		size = "Large",
+		value = 110,
+		basePrice = 165,
+		floorIds = { 1, 2, 3 },
+	},
 }
 
 local StockItems = {}
@@ -116,6 +147,24 @@ for id, item in ITEMS do
 	item.rotation = item.rotation or CFrame.identity
 	item.basePrice = item.basePrice or item.value
 	item.floorIds = item.floorIds or {}
+	item.size = item.size or "Small"
+end
+
+-- A slot counts as large when its space is at least this many studs across both ways.
+-- Regular slots are under 1 x 1; the Display Stands and the storage LargeShelfs are bigger.
+local LARGE_SLOT = 1.5
+
+-- Whether the item may go in a slot of this size (its SlotSize attribute): small items
+-- fit anywhere, large ones only in large slots.
+function StockItems.fits(id, slotSize)
+	local item = ITEMS[id]
+	if not item then
+		return false
+	end
+	if item.size ~= "Large" then
+		return true
+	end
+	return typeof(slotSize) == "Vector3" and slotSize.X >= LARGE_SLOT and slotSize.Z >= LARGE_SLOT
 end
 
 -- The definition for an ItemId, or nil if there's no such item.
@@ -148,6 +197,14 @@ function StockItems.create(id, slotSize)
 		return nil
 	end
 	local model = template:Clone()
+	-- Roblox doesn't draw Glass behind Glass, so a glass bottle in a display case vanished.
+	-- Glass pieces become see-through plastic with a little shine instead.
+	for _, d in model:GetDescendants() do
+		if d:IsA("BasePart") and d.Material == Enum.Material.Glass then
+			d.Material = Enum.Material.SmoothPlastic
+			d.Reflectance = math.max(d.Reflectance, 0.15)
+		end
+	end
 	if slotSize then
 		local item = ITEMS[id]
 		local extents = template:GetAttribute("Extents") or template:GetExtentsSize()

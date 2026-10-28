@@ -17,12 +17,11 @@
 --
 -- Request clients: on a request's due day QuestService hands over a client to send in
 -- (takeDueVisit), who looks like the request's ClientUserId, has no hat and runs:
---   Enter -> Browse for the requested item ("Requested: <item>") -> Found -> ToCounter ->
---   Place -> Pay (a player holds Sell; CounterService.questCheckout) -> Leave
--- Not on any shelf after a full search, they watch the shelves for QUEST_NOT_FOUND_WAIT
--- (so an item stocked meanwhile still counts) before leaving. Leaving without the sale,
--- for any reason (not found, the counter wait, dusk, despawning, an error), fails the
--- request; the item goes back on a shelf as with any customer.
+--   Enter -> ToCounter (a spot or the line) -> Ask ("Requested: <item>") -> Pay (a player
+--   brings the item and holds Sell; CounterService.questCheckout) -> Leave
+-- They don't browse: players fetch the item themselves, off the racks or the shop
+-- furniture (StockingService's Take prompts). Leaving without the sale, for any reason
+-- (QUEST_COUNTER_WAIT runs out, the line, dusk, despawning, an error), fails the request.
 -- Every step has a timeout and every customer a MAX_LIFETIME, so nobody gets stuck. A
 -- normal customer never leaves with stock: whatever they hold goes back on the shelf
 -- (CustomerUtil.restore) unless it was sold.
@@ -244,10 +243,10 @@ local function holdInHand(customer, model)
 	CustomerUtil.attach(model, hand, CustomerUtil.handOffset(model))
 end
 
--- Visits each piece of shop furniture once (or each in `list`), in a random order, looking
--- for the wanted item. Returns true holding it, or false having seen everything.
-local function browse(customer, list)
-	for _, furniture in shuffled(list or CustomerUtil.shopFurniture()) do
+-- Visits each piece of shop furniture once, in a random order, looking for the wanted
+-- item. Returns true holding it, or false having seen everything.
+local function browse(customer)
+	for _, furniture in shuffled(CustomerUtil.shopFurniture()) do
 		local slots = CustomerUtil.slotsOf(furniture)
 		local stand = slots[1] and CustomerUtil.standPoint(furniture, slots[1])
 		if stand and CustomerUtil.walkTo(customer, stand) then
@@ -376,80 +375,42 @@ local function runNormal(customer)
 end
 
 -- ================= REQUEST CLIENTS =================
--- Shop furniture with the item on it that nobody is already after, or nil.
-local function furnitureHolding(itemId)
-	for _, furniture in CustomerUtil.shopFurniture() do
-		if findWanted(furniture, itemId) then
-			return furniture
-		end
-	end
-	return nil
-end
-
--- A request client's visit (see the header): no haggling and no queue-jumping, just the
--- requested item at the fixed reward, sold when a player holds Sell.
+-- A request client's visit (see the header): straight to the counter to ask for the item,
+-- then wait there for a player to hand it over at the fixed reward.
 local function runQuest(customer)
 	local quest = customer.quest
+	local wanted = StockItems.get(quest.ItemId)
+	local wantedName = wanted and wanted.name or quest.ItemId
+	customer.wantedId = quest.ItemId
 	customer.state = "Enter"
 	CustomerUtil.walkTo(customer, CustomerUtil.entryPoint())
 
-	customer.state = "Decide"
-	customer.wantedId = quest.ItemId
-	local wanted = StockItems.get(quest.ItemId)
-	CustomerUtil.say(customer, `Requested: {wanted and wanted.name or quest.ItemId}`, "want")
-
-	customer.state = "Browse"
-	local found = browse(customer)
-	-- Players may still be stocking it: keep an eye on the shelves before giving up.
-	local deadline = os.clock() + Config.QUEST_NOT_FOUND_WAIT
-	while not found and os.clock() < deadline do
-		customer.state = "NotFound"
-		task.wait(1)
-		local furniture = furnitureHolding(quest.ItemId)
-		if furniture then
-			customer.state = "Browse"
-			found = browse(customer, { furniture })
-		end
-	end
-	if not found then
-		QuestService.fail(quest)
-		leaveUnsold(customer, "You didn't get it for me...", "sad")
-		return
-	end
-	CustomerUtil.say(customer, "That's the one!", "happy", 2)
-
 	customer.state = "ToCounter"
+	CustomerUtil.say(customer, `Requested: {wantedName}`, "want")
 	local spot = waitForSpot(customer)
 	if not spot then
 		QuestService.fail(quest)
 		leaveUnsold(customer, "I can't wait all day.", "annoyed")
 		return
 	end
-	CustomerUtil.say(customer, nil)
 	CustomerUtil.walkTo(customer, CustomerUtil.counterStand(spot.part), 12)
 	CustomerUtil.face(customer, spot.part.Position)
 
-	customer.state = "Place"
-	local carried = customer.carried
-	if not carried or not carried.model.Parent then
-		QuestService.fail(quest)
-		leaveUnsold(customer, "Huh. Where'd it go?", "sad")
-		return
-	end
-	CustomerUtil.tweenItem(carried.model, StockItems.restingCFrame(carried.itemId, spot.part))
-
-	customer.state = "Pay"
-	CustomerUtil.say(customer, `As agreed: ${quest.RewardPrice}`, "want")
+	customer.state = "Ask"
+	CustomerUtil.say(customer, `Requested: {wantedName}. ${quest.RewardPrice}, as agreed.`, "want")
 	if not CounterService.questCheckout(customer, spot, quest) then
 		QuestService.fail(quest)
-		leaveUnsold(customer, "I'll take my business elsewhere.", "annoyed")
+		leaveUnsold(customer, "You didn't get it for me...", "sad")
 		return
 	end
 	customer.state = "Sold"
 	CustomerUtil.say(customer, "Exactly what I wanted. Thank you!", "happy")
-	dropItems(customer)
-	CounterService.release(customer)
+	local carried = customer.carried
+	if carried then
+		holdInHand(customer, carried.model)
+	end
 	task.wait(1.5)
+	CounterService.release(customer)
 	CustomerUtil.say(customer, nil)
 end
 

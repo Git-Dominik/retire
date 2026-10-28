@@ -9,9 +9,19 @@
 --
 -- Items are single parts with the rest of their model welded on, carrying a
 -- RestOffset from their bottom centre (see Levels).
+--
+-- The big racks among them (StockFurniture models under StorageRacks, like LargeShelf_1)
+-- are filled first: an item there is stocked into a free StockSlot exactly as a player
+-- stocks the shop (a "StockedItem" model, the slot's Occupied and the rack's FreeSlots), so
+-- StockingService's Take prompt takes it off again. Only when those are full do small items
+-- go on the plain shelf boards; a large item with no slot left isn't placed (Cargo keeps it
+-- in ServerStorage).
 
 local CollectionService = game:GetService("CollectionService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local ServerStorage = game:GetService("ServerStorage")
+
+local StockItems = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("StockItems"))
 
 local SPOTS_PER_SHELF = 4
 local YAW_JITTER = 12 -- degrees either way, so a full rack doesn't look machine-placed
@@ -64,9 +74,83 @@ local function restOn(p, surface)
 	end
 end
 
--- Puts the item on the first free spot. Returns false (and leaves it alone) when
--- every rack is full.
+local function slotsOf(furniture)
+	local slots = {}
+	for _, child in furniture:GetChildren() do
+		if CollectionService:HasTag(child, "StockSlot") then
+			table.insert(slots, child)
+		end
+	end
+	table.sort(slots, function(a, b)
+		return (a:GetAttribute("SlotIndex") or 0) < (b:GetAttribute("SlotIndex") or 0)
+	end)
+	return slots
+end
+
+-- Stocks the item into the first free slot of a big storage rack. The loose part is
+-- destroyed and a fresh model takes its place. Returns false if every slot is taken.
+local function stockOnRack(item)
+	local store = findStore()
+	local folder = store and store:FindFirstChild("StorageRacks", true)
+	local itemId = item:GetAttribute("ItemId")
+	if not folder or not StockItems.get(itemId) then
+		return false
+	end
+	local racks = folder:GetChildren()
+	table.sort(racks, function(a, b)
+		return a.Name < b.Name
+	end)
+	for _, rack in racks do
+		if CollectionService:HasTag(rack, "StockFurniture") then
+			local slots = slotsOf(rack)
+			for _, slot in slots do
+				if
+					not slot:GetAttribute("Occupied")
+					and StockItems.fits(itemId, slot:GetAttribute("SlotSize"))
+				then
+					local model = StockItems.create(itemId, slot:GetAttribute("SlotSize"))
+					if not model then
+						return false
+					end
+					model.Name = "StockedItem"
+					model:SetAttribute("ItemId", itemId)
+					for _, d in model:GetDescendants() do
+						if d:IsA("BasePart") then
+							d.Anchored = true
+							d.CanCollide = false
+							d.CanTouch = false
+						end
+					end
+					model:PivotTo(StockItems.restingCFrame(itemId, slot))
+					model.Parent = slot
+					slot:SetAttribute("Occupied", true)
+					local free = 0
+					for _, other in slots do
+						if not other:GetAttribute("Occupied") then
+							free += 1
+						end
+					end
+					rack:SetAttribute("FreeSlots", free)
+					item:Destroy()
+					return true
+				end
+			end
+		end
+	end
+	return false
+end
+
+-- Puts the item on the first free spot: a big rack's slot, else a shelf board. Returns
+-- false (and leaves it alone) when every rack is full.
 function StockRacks.place(item)
+	if stockOnRack(item) then
+		return true
+	end
+	-- The plain boards only have room for small items side by side.
+	local def = StockItems.get(item:GetAttribute("ItemId"))
+	if def and def.size == "Large" then
+		return false
+	end
 	for _, entry in shelves() do
 		local shelf, rack = entry.shelf, entry.rack
 		local spots = occupied[shelf] or {}

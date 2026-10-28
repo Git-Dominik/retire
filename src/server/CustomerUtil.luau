@@ -445,7 +445,10 @@ function CustomerUtil.restore(model, itemId, slot, furniture)
 	end
 	if furniture and furniture.Parent then
 		for _, other in CustomerUtil.slotsOf(furniture) do
-			if not other:GetAttribute("Occupied") then
+			if
+				not other:GetAttribute("Occupied")
+				and StockItems.fits(itemId, other:GetAttribute("SlotSize"))
+			then
 				putInSlot(model, itemId, other)
 				return true
 			end

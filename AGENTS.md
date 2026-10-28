@@ -1,7 +1,12 @@
 # Notes for agents
 
-Roblox game synced into Studio with Rojo (see README for setup and layout).
-Only what isn't obvious from the code is listed here.
+Roblox game whose scripts live in `src` and are synced into Studio through the
+Roblox MCP (see Studio workflow). Only what isn't obvious from the code is listed
+here.
+
+**After every feature, update this file**: add what a later agent needs and
+can't read off the code (cross-script contracts, place-only setup, owner
+decisions, gotchas hit). Keep it short and fix anything it made stale.
 
 ## The game
 
@@ -147,36 +152,39 @@ rebuilt from transcript data.
 
 ## Studio workflow
 
-- Rojo isn't always connected. To push a script without it:
+- **Don't use Rojo.** Sync through the Roblox MCP instead. Rojo maps `src`
+  onto the whole of ServerScriptService, StarterPlayerScripts and
+  `ReplicatedStorage.Shared`, and it has wiped Studio-only scripts and put old
+  copies back (Elevator.server) before. To recover from that, load an old
+  place version with
+  `game:GetObjects("http://www.roblox.com/asset/?id=89318278898862&version=N")`
+  (every service except Workspace).
+- **Compare before you write.** Collaborators edit Studio live, so Studio is
+  often *ahead* of `src`, and some scripts exist only in Studio. Before pushing,
+  hash every script's `GetEditorSource` in Studio (`execute_luau`) against the
+  files in `src`. For each script you're about to change:
+  - Studio matches `src`: push yours.
+  - Studio differs: pull Studio's copy into `src` first, then make your change
+    on top of it. Never overwrite a collaborator's change.
+  - Leave scripts you aren't changing alone, but mention any drift you saw.
+- **Pushing** (`src` → Studio):
   1. Serve `src` locally with `python3 -m http.server 34877 --bind 127.0.0.1`.
   2. In Studio, read the file with `HttpService:GetAsync` and write it with
      `ScriptEditorService:UpdateSourceAsync`.
-  3. Kill the server afterwards.
-- Keep the repo and Studio copies identical. If you edit in Studio, mirror the
-  edit back to the file.
-  - Studio can be *ahead* of `src`. Before overwriting a script, compare the
-    two and edit whichever is newer.
-- Playtests run the script *editor* copy (`ScriptEditorService:GetEditorSource`),
-  not `.Source`, because the place uses collaborative editing.
-  - Always write with `UpdateSourceAsync`, then check that `GetEditorSource`
-    equals `.Source`.
-- **Rojo can delete Studio-only scripts.** `default.project.json` maps
-  `src/server`, `src/client` and `src/shared` onto the whole of
-  ServerScriptService, StarterPlayerScripts and `ReplicatedStorage.Shared`.
-  Connecting Rojo from an old checkout wiped scripts that existed only in
-  Studio.
-  - Keep every script in `src` and committed.
-  - This keeps happening: a collaborator's Rojo replaced Elevator.server with
-    an old copy. Before a playtest, diff every Studio script against `src`.
-    Merge any collaborator change found in Studio rather than overwriting it.
-  - `ServerStorage.__Rojo_SessionLock` shows who is connected.
-  - To recover, load an old place version with
-    `game:GetObjects("http://www.roblox.com/asset/?id=89318278898862&version=N")`.
-    This returns every service except Workspace.
+  3. Check that `GetEditorSource` equals `.Source` (playtests run the editor
+     copy, because the place uses collaborative editing), then kill the server.
+- **Pulling** (Studio → `src`): serve `src` with a small server that also
+  accepts POST, and `HttpService:PostAsync` the `GetEditorSource` text to it.
+- Wrap place edits (models, colours, templates) in a
+  `ChangeHistoryService:TryBeginRecording` undo step.
 - It's a Team Create place with other collaborators editing live.
 - Playtests:
   - `solo_playtest`, then `eval_server_runtime` / `eval_client_runtime` and
     `simulate_keyboard_input`.
+  - `simulate_keyboard_input` sometimes fails outright. `prompt:InputHoldBegin()`
+    from `eval_client_runtime` works once the prompt has been shown (camera aimed
+    at it, line of sight clear).
+  - Shoplifters will take test stock you leave on shop furniture.
   - The playtest server can restart on its own. If world state "vanishes",
     check uptime before calling it a bug.
 - The owner tests with a regular R15 character. Calibrate arm and grip
@@ -241,15 +249,32 @@ rebuilt from transcript data.
 The server is authoritative. StockingClient only decides which Stock prompts
 *this* player sees. There are no boxes and no placement animation.
 
-- Cargo.server hands delivered items to `StockRacks` (a server module), which
-  puts each on a free spot of a shelf board in `ElevatorRoom.StorageRacks`
-  (`SPOTS_PER_SHELF` per board) and tags it `RackItem`. If every rack is full,
-  items go to `ServerStorage.DeliveredCargo`.
+- Cargo.server hands delivered items to `StockRacks` (a server module). It
+  stocks each into a free slot of the big racks first (`LargeShelf_1/2`,
+  StockFurniture under `ElevatorRoom.StorageRacks`). After that, small items go
+  on a plain shelf board (`SPOTS_PER_SHELF` per board, tagged `RackItem`).
+  Anything left over goes to `ServerStorage.DeliveredCargo`.
+  - The LargeShelfs take cargo only: the owner doesn't want players stocking
+    them, so they get Take prompts but no Stock prompt.
 - A rack item's Take prompt gives the player a Tool (Handle = a copy of the
   item, attributes `ShopItem`, `ItemId`). If the tool is lost without being
-  stocked (death, leaving), the item goes back on a rack.
+  stocked or sold (death, leaving), the item goes back on a rack. A tool marked
+  `Stocked` or `Sold` is destroyed with its item.
 - A furniture's Stock prompt shows while you hold a `ShopItem` tool and the
-  furniture has `FreeSlots`. It places the item in the next free slot at once.
+  furniture has a free slot that item fits. It places the item there at once.
+- Every filled slot has a Take prompt (`ShelfTakePrompt`), shown while your
+  hands are empty. It lifts the item back off into a tool (via
+  `Levels.placeItem`), so items can be moved or handed to a request client.
+- **Prompt placement.** Camera.client forces `RequiresLineOfSight` on every
+  prompt, so prompts hang from attachments in front of everything, not inside
+  the furniture. Stock goes on `StockPoint`, at the next free slot. Each take
+  prompt goes on its slot's `ShelfTakePoint`, and moves when the slot fills or
+  empties.
+  - The front is chosen by which way along the slot's front axis has more room
+    before anything solid, because some slots face *into* their furniture.
+  - Behind glass, the point goes just above the case.
+- Roblox doesn't draw Glass behind Glass, so `StockItems.create` swaps Glass
+  pieces for see-through plastic. Before this, the bottle vanished in the cases.
 
 | Tag | On | Attributes |
 | --- | --- | --- |
@@ -258,10 +283,25 @@ The server is authoritative. StockingClient only decides which Stock prompts
 | `StockSlot` | Invisible slot parts under the furniture | `Occupied`, `SlotIndex`, `SlotSize` (Vector3) |
 
 - To add an item:
-  1. Add a template Model to `ReplicatedStorage.StockItems`.
+  1. Add a template Model to `ReplicatedStorage.StockItems`, pivoted at the
+     bottom centre with the front on LookVector, and an `Extents` attribute.
   2. Add an entry to `ITEMS` in `StockItems.luau`, with an optional
-     `rotation`.
-- `StockItems.create` scales items down to fit the slot.
+     `rotation`, a `size` and placeholder `floorIds`.
+- **Item sizes.** `size = "Small"` (the default) is up to 1×1 stud and
+  `"Large"` is up to 2×2. `StockItems.fits` only lets a large item into a slot
+  whose `SlotSize` is at least 1.5 studs both ways, which means the Display
+  Stands in the shop and the LargeShelfs. Within that, `StockItems.create`
+  scales items down to fit the slot.
+- **Large items on the floors.** They never use a floor's regular 1×1 item
+  spot.
+  - Instead they spawn on parts tagged `LargeItemSpawn`. Each is invisible and
+    anchored, and its top face is the resting surface.
+  - The parts have to sit inside a template that gets cloned into a room (for
+    example `ServerStorage.WallShop` on floor 2), because rooms are rebuilt on
+    every visit.
+  - When a room has any, there's a `LARGE_ITEM_CHANCE` (in Levels) that the
+    floor's item is a large one on a random point.
+  - The owner places these points by hand.
 - Backspace (Camera.client → the `DropItem` remote) drops a held shop item or
   scavenged item in front of the player. The server sets the tool's `DropAt`
   and destroys it, and whoever built the tool puts the item down there.
@@ -390,6 +430,21 @@ has the details; this is the part that crosses scripts.
     pays the item's `basePrice` by themselves.
   - The sale runs in the customer's own thread, so one sent home mid-checkout
     never pays.
+- **Item requests** (QuestService, with QuestClient and the journal's Requests
+  pages). At dawn, a client may ask for one item by a due day. Tunables are in
+  ShopConfig's QUESTS section.
+  - On the due day the client walks straight to the counter and asks for it.
+    Players fetch the item (from the racks or with a shelf Take prompt) and
+    hold **Sell** on the client's spot (`QuestSellPrompt`). The prompt only
+    shows to whoever holds that item.
+  - This is the owner's one exception to "no counter prompt". Normal customers
+    still pay by themselves, and never want an item that has an active request.
+  - The server validates the held item, the player's distance and the client.
+    It completes and pays without yielding, so the reward is paid once.
+  - Failing a request costs only the reward, never a strike.
+  - Clients read `ReplicatedStorage.QuestList` (JSON). Nothing is saved.
+  - `floorIds` on items say which floors to look on. They're placeholders, and
+    Levels doesn't read them.
 - **Quota** (QuotaService): ReplicatedStorage attributes `ShopMoney`,
   `DayEarnings`, `Quota`, `DaySales`, `DayWalkouts`, `DayStolenValue`,
   `Strikes`, `MaxStrikes` and `ShopFailed`. Nothing is saved.

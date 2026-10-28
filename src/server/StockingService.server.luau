@@ -14,6 +14,18 @@
 -- tool (here, or Elevator.server for scavenged items) puts the item down there.
 -- A dropped shop item is tagged DroppedItem and can be taken again.
 --
+-- The big StockFurniture racks under the storage room's StorageRacks take cargo only
+-- (StockRacks): they get Take prompts but no Stock prompt.
+-- Prompts hang from attachments in front of the furniture (see PROMPT POINTS): the Stock
+-- prompt on StockPoint, at the next free slot; each slot's take prompt on ShelfTakePoint.
+--
+-- Taking back off the shop furniture: each StockSlot gets a ShelfTakePrompt (StockingClient
+-- shows it while the slot is Occupied and you aren't holding anything). It lifts the
+-- stocked item out of the slot into your hands as the same kind of tool a rack gives, so
+-- it can be restocked elsewhere or handed to a request client at the counter
+-- (CounterService). A lost one goes to the racks like any other.
+-- A tool with Sold set (handed over at the counter) is destroyed with its item.
+--
 -- Placed in Studio, not built here:
 --   StockFurniture  tag on each furniture model
 --   StockSlot       the invisible slot parts under each furniture model, with
@@ -29,6 +41,7 @@ local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Config = require(Shared:WaitForChild("StockingConfig"))
 local StockItems = require(Shared:WaitForChild("StockItems"))
 local StockRacks = require(script.Parent:WaitForChild("StockRacks"))
+local Levels = require(script.Parent:WaitForChild("Levels"))
 
 local store = workspace:WaitForChild("Grocery Store")
 
@@ -75,9 +88,11 @@ local function slotsOf(furniture)
 	return slots
 end
 
-local function nextFreeSlot(furniture)
+-- The first free slot, or with an itemId the first free one that item fits (StockItems.fits).
+local function nextFreeSlot(furniture, itemId)
 	for _, slot in slotsOf(furniture) do
-		if not slot:GetAttribute("Occupied") then
+		local fits = not itemId or StockItems.fits(itemId, slot:GetAttribute("SlotSize"))
+		if not slot:GetAttribute("Occupied") and fits then
 			return slot
 		end
 	end
@@ -112,6 +127,62 @@ local function mainPartOf(furniture)
 	return best
 end
 
+-- ================= PROMPT POINTS =================
+-- Every prompt must be in plain view (Camera.client forces RequiresLineOfSight), and a
+-- slot sits inside its case or cupboard with its item standing in it, so prompts hang from
+-- attachments in front of everything instead. A slot's point is halfway up the space its
+-- item stands in, pushed out of the furniture's open side: of the two ways along the
+-- slot's front axis (some slots face into their furniture), the one with more room before
+-- anything solid (a wall case's open side faces the shop, not the wall). It's then brought just in front of whatever is in the way
+-- there (the stocked item itself), so the cast is redone when the slot fills or empties.
+-- If that's glass (a display case's front or lid), the point goes just above the case.
+local function slotPoint(slot)
+	local furniture = slot.Parent
+	local space = slot:GetAttribute("SlotSize")
+	local lift = typeof(space) == "Vector3" and space.Y / 2 or 0.5
+	local middle = slot.CFrame * Vector3.new(0, slot.Size.Y / 2 + lift, 0)
+
+	-- Everything solid but stock: the furniture's own parts and the walls behind it.
+	local ignore = { workspace:FindFirstChild("Customers") }
+	for _, other in CollectionService:GetTagged("StockSlot") do
+		table.insert(ignore, other)
+	end
+	local shellParams = RaycastParams.new()
+	shellParams.FilterType = Enum.RaycastFilterType.Exclude
+	shellParams.FilterDescendantsInstances = ignore
+	local out, room = slot.CFrame.LookVector, -1
+	for _, dir in { slot.CFrame.LookVector, -slot.CFrame.LookVector } do
+		local hit = workspace:Raycast(middle, dir * 12, shellParams)
+		local free = hit and (hit.Position - middle).Magnitude or math.huge
+		if free > room then
+			out, room = dir, free
+		end
+	end
+
+	local allParams = RaycastParams.new()
+	allParams.FilterType = Enum.RaycastFilterType.Include
+	allParams.FilterDescendantsInstances = { furniture }
+	local from = middle + out * 12
+	local hit = workspace:Raycast(from, middle - from, allParams)
+	-- Behind glass (a display case): above the case instead, where nothing is in the way.
+	local glass = hit
+		and (hit.Instance.Material == Enum.Material.Glass or hit.Instance.Transparency > 0.2)
+	if glass then
+		local box, size = furniture:GetBoundingBox()
+		local top = box.Position.Y + size.Y / 2
+		return Vector3.new(middle.X, top + 0.6, middle.Z)
+	end
+	return (hit and hit.Position or middle) + out * 0.6
+end
+
+-- Moves the slot's take point (made in setupSlot) to where it should be now.
+local function placeSlotPoint(slot)
+	local holder = slot:FindFirstChild("ShelfTakePoint")
+	if holder then
+		holder.WorldPosition = slotPoint(slot)
+	end
+end
+
 -- ================= TAKING =================
 -- The item comes off the rack into the player's hands as a Tool whose Handle is a copy
 -- of it. The original is kept off-world until the item is stocked or comes back.
@@ -120,17 +191,8 @@ local function restOn(p, surface)
 	p.CFrame = surface * (offset or CFrame.new(0, p.Size.Y / 2, 0))
 end
 
-local function take(player, item)
-	local root = rootOf(player)
-	local takeable = CollectionService:HasTag(item, "RackItem")
-		or CollectionService:HasTag(item, "DroppedItem")
-	if not root or not takeable then
-		return
-	end
-	if (root.Position - item.Position).Magnitude > Config.MAX_TAKE_DISTANCE then
-		return
-	end
-
+-- Puts the item (a single part, as Levels builds it) in the player's hands as a Tool.
+local function giveTool(player, root, item)
 	local tool = Instance.new("Tool")
 	tool.Name = item.Name
 	tool.CanBeDropped = false
@@ -167,13 +229,62 @@ local function take(player, item)
 			item.Anchored = true
 			item.Parent = store
 			CollectionService:AddTag(item, "DroppedItem")
-		elseif tool:GetAttribute("Stocked") or not StockRacks.place(item) then
-			-- Stocked, or every rack is full and there's nowhere to put it back.
+		elseif
+			tool:GetAttribute("Stocked")
+			or tool:GetAttribute("Sold")
+			or not StockRacks.place(item)
+		then
+			-- Stocked, sold, or every rack is full and there's nowhere to put it back.
 			item:Destroy()
 		end
 	end)
 	tool.Parent = player.Backpack
 	character:FindFirstChildOfClass("Humanoid"):EquipTool(tool)
+end
+
+local function take(player, item)
+	local root = rootOf(player)
+	local takeable = CollectionService:HasTag(item, "RackItem")
+		or CollectionService:HasTag(item, "DroppedItem")
+	if not root or not takeable then
+		return
+	end
+	if (root.Position - item.Position).Magnitude > Config.MAX_TAKE_DISTANCE then
+		return
+	end
+	giveTool(player, root, item)
+end
+
+-- Lifts the stocked item out of a shop slot into the player's hands. One hand at a time,
+-- so a held item can't be swapped for another.
+local function takeFromShelf(player, slot)
+	local root = rootOf(player)
+	local model = slot:FindFirstChild("StockedItem")
+	local itemId = model and model:GetAttribute("ItemId")
+	if
+		not root
+		or not itemId
+		or not slot:GetAttribute("Occupied")
+		or not slot:IsDescendantOf(store)
+	then
+		return
+	end
+	if root.Parent:FindFirstChildOfClass("Tool") then
+		return
+	end
+	local point = slot:FindFirstChild("ShelfTakePoint")
+	local reach = point and point.WorldPosition or slot.Position
+	if (root.Position - reach).Magnitude > Config.MAX_TAKE_DISTANCE then
+		return
+	end
+	local item = Levels.placeItem(nil, itemId, model:GetPivot())
+	if not item then
+		return
+	end
+	model:Destroy()
+	slot:SetAttribute("Occupied", false)
+	updateFreeSlots(slot.Parent)
+	giveTool(player, root, item)
 end
 
 local function setupRackItem(item)
@@ -202,11 +313,11 @@ local function stock(player, furniture, prompt)
 	if not tool or not tool:GetAttribute("ShopItem") or tool:GetAttribute("Stocked") then
 		return
 	end
-	if (root.Position - prompt.Parent.Position).Magnitude > Config.MAX_STOCK_DISTANCE then
+	if (root.Position - prompt.Parent.WorldPosition).Magnitude > Config.MAX_STOCK_DISTANCE then
 		return
 	end
-	local slot = nextFreeSlot(furniture)
 	local itemId = tool:GetAttribute("ItemId")
+	local slot = nextFreeSlot(furniture, itemId)
 	local model = slot and StockItems.create(itemId, slot:GetAttribute("SlotSize"))
 	if not model then
 		updateFreeSlots(furniture)
@@ -240,6 +351,9 @@ local function setupFurniture(furniture)
 	if not main then
 		return
 	end
+	-- The big racks in the storage room only take cargo (StockRacks); players can't stock
+	-- them, only take things off.
+	local storageRack = furniture:FindFirstAncestor("StorageRacks") ~= nil
 	local prompt = Instance.new("ProximityPrompt")
 	prompt.Name = "StockPrompt"
 	prompt.ActionText = "Stock"
@@ -251,24 +365,67 @@ local function setupFurniture(furniture)
 	prompt.RequiresLineOfSight = true
 	-- Shown by StockingClient only while you hold a shop item.
 	prompt.Enabled = false
-	prompt.Parent = main
+	-- In front of the next free slot (see PROMPT POINTS), moved as slots fill.
+	local stockPoint = Instance.new("Attachment")
+	stockPoint.Name = "StockPoint"
+	stockPoint.Parent = main
+	prompt.Parent = stockPoint
+	local function placeStockPoint()
+		local slot = nextFreeSlot(furniture)
+		stockPoint.WorldPosition = slot and slotPoint(slot) or main.Position
+	end
 
-	for _, slot in slotsOf(furniture) do
+	local function setupSlot(slot)
 		if slot:GetAttribute("Occupied") == nil then
 			slot:SetAttribute("Occupied", false)
 		end
+		if slot:FindFirstChild("ShelfTakePoint") then
+			return
+		end
+		local holder = Instance.new("Attachment")
+		holder.Name = "ShelfTakePoint"
+		holder.Parent = slot
+		placeSlotPoint(slot)
+		slot:GetAttributeChangedSignal("Occupied"):Connect(function()
+			-- Deferred so the stocked item is in place before the cast.
+			task.defer(placeSlotPoint, slot)
+		end)
+		local shelfPrompt = Instance.new("ProximityPrompt")
+		shelfPrompt.Name = "ShelfTakePrompt"
+		shelfPrompt.ActionText = "Take"
+		shelfPrompt.ObjectText = furniture.Name
+		shelfPrompt.KeyboardKeyCode = Enum.KeyCode.E
+		shelfPrompt.MaxActivationDistance = Config.TAKE_PROMPT_DISTANCE
+		shelfPrompt.RequiresLineOfSight = true
+		-- Shown by StockingClient only while the slot holds something.
+		shelfPrompt.Enabled = false
+		shelfPrompt.Parent = holder
+		shelfPrompt.Triggered:Connect(function(player)
+			takeFromShelf(player, slot)
+		end)
+	end
+	for _, slot in slotsOf(furniture) do
+		setupSlot(slot)
 	end
 	updateFreeSlots(furniture)
+	placeStockPoint()
+	furniture:GetAttributeChangedSignal("FreeSlots"):Connect(function()
+		task.defer(placeStockPoint)
+	end)
 
 	-- Slots added later count straight away.
 	furniture.ChildAdded:Connect(function(child)
 		if CollectionService:HasTag(child, "StockSlot") then
+			setupSlot(child)
 			updateFreeSlots(furniture)
 		end
 	end)
 
+	if storageRack then
+		prompt:Destroy()
+	end
 	prompt.Triggered:Connect(function(player)
-		if furniture:IsDescendantOf(store) then
+		if furniture:IsDescendantOf(store) and not storageRack then
 			stock(player, furniture, prompt)
 		end
 	end)
