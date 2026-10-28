@@ -440,6 +440,19 @@ if not touch then
 	workspace.DescendantAdded:Connect(useCustomStyle)
 end
 
+-- Every prompt needs a clear view, so none can be used through a wall. Set here
+-- rather than per script because many prompts are made in Studio or in other
+-- scripts that spell it out as false.
+local function requireSight(d)
+	if d:IsA("ProximityPrompt") then
+		d.RequiresLineOfSight = true
+	end
+end
+for _, d in ipairs(workspace:GetDescendants()) do
+	requireSight(d)
+end
+workspace.DescendantAdded:Connect(requireSight)
+
 -- ================= MOVEMENT =================
 local character
 local humanoid

@@ -187,7 +187,8 @@ local function setupRackItem(item)
 	prompt.ObjectText = def and def.name or item.Name
 	prompt.KeyboardKeyCode = Enum.KeyCode.E
 	prompt.MaxActivationDistance = Config.TAKE_PROMPT_DISTANCE
-	prompt.RequiresLineOfSight = false
+	-- Keeps the prompt from showing (and firing) through walls.
+	prompt.RequiresLineOfSight = true
 	prompt.Parent = item
 	prompt.Triggered:Connect(function(player)
 		take(player, item)
@@ -246,7 +247,8 @@ local function setupFurniture(furniture)
 	prompt.KeyboardKeyCode = Enum.KeyCode.E
 	prompt.HoldDuration = 0
 	prompt.MaxActivationDistance = Config.STOCK_PROMPT_DISTANCE
-	prompt.RequiresLineOfSight = false
+	-- Keeps the prompt from showing (and firing) through walls.
+	prompt.RequiresLineOfSight = true
 	-- Shown by StockingClient only while you hold a shop item.
 	prompt.Enabled = false
 	prompt.Parent = main
