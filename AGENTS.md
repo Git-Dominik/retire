@@ -91,6 +91,121 @@ recording (`ChangeHistoryService:TryBeginRecording`):
   furniture (see below).
 - `VolumetricBeam` tags, and the EmployeeRoom `Hinge` / `OpenAngle` /
   `SwingTime` / `Partner` attributes.
+- `ServerStorage.WallShop`: floor 2's shop in a hole in the back wall. Levels
+  cuts the hole from its `OpeningSize` attribute and clones it in on each visit.
+  - It's pivoted at the bottom centre of the opening, on the wall's room face,
+    with its front (-Z) facing the room.
+  - The `Void` is black Neon so no light shows inside. Its parts start inside
+    the wall's thickness; flush with the wall face they z-fight.
+  - The owner is decorating the shop by hand, so leave its dressing alone.
+    The shopkeeper entity is `Eyes` plus `Tentacles`.
+  - WallShop.client animates the shopkeeper:
+    - `Eyes` (tag `ShopEyes`) is saved hidden. The owner chose a cluster of
+      mismatched eyes over two big ones: `Eye1`..`Eye7` models (`Size`
+      attribute) around a `Root` that carries the Glow light.
+      - The cluster opens within 22 studs and shuts past 26. The eyes open
+        one after another (middle first), and each blinks and glances on its
+        own: mostly at the player, sometimes anywhere. The pupils shrink as
+        the player comes closer.
+      - Each eye is a stack of sphere meshes. From the room inwards: `Pupil`
+        (black SmoothPlastic, `Look` and `Pupil` attributes), a flattened
+        `Iris` disc (Neon, `Look`), the `Sclera`, then a flattened `Halo`.
+        `Look` parts slide across the eye to glance.
+      - Keep the pupil in front of the iris's front face, and keep the sclera
+        a dim grey-blue. A bright sclera blooms out the iris and pupil under
+        the place's Bloom and DepthOfField.
+      - The client keeps each saved mesh scale and multiplies blinks and
+        pupil size on top.
+    - `Effects` (tag `ShopEffects`) holds the `Mist`, `Dust` (`DustCloud`
+      and `DustGrit`) and `Motes` emitters, saved off. The client switches
+      them on while the shop is open, and an emitter's `Burst` attribute
+      puffs out that many particles as it opens.
+      - The dust only reads on the dark floor because it's partly self-lit
+        (LightInfluence about 0.3).
+      - While the player is close, the client also adds a local `ShopDread`
+        ColorCorrection to Lighting, which desaturates and darkens the room.
+    - Sounds are made by WallShop.client and play locally. The IDs are in its
+      config, all checked as loading in this place:
+      - two muffled loops (an EqualizerSoundEffect cuts the highs) that fade
+        with the shop: the ambience bed 9114244977, slowed, and the swell
+        9043337370, restarted from its start each time the eyes open;
+      - breathing now and then: 9113983944, 9113984054 and 9113984056.
+      The owner liked the ambience and asked for it looped and more muffled.
+      They called the tentacle squirm and slap sounds "very bad", so the
+      tentacles stay silent. TentacleRig.update still returns its "emerge"
+      and "grip" events, unused.
+    - `Tentacles` holds three copies (`Left`, `Right`, `Top`, tag
+      `ShopTentacles`) of the free "Animated tentacles" rig (135280093987265).
+      Each copy has 10 bone chains under one `RootPart`. Each copy's knot sits
+      behind the wall beside or above the hole, so the tentacles reach in from
+      the dark edges, never out of the eyes.
+    - Shared.TentacleRig poses them. Its header documents the per-chain
+      attributes: `Mode` (`Grip` / `Reach` / `Hidden`), `Way1`..`WayN`,
+      `HookNormal`, `Sway`, `Speed` and `Phase`.
+    - Five tentacles show, deliberately lopsided because the owner found a
+      symmetric layout too perfect:
+      - two on the left: one rising high, one sloping low;
+      - one on the right at mid height;
+      - two over the header, off-centre (x -3.1 and +1.4).
+      The owner removed the two floor crawlers and found more tentacles too
+      busy. The small chains are `Hidden`: from the knots they can't reach
+      past the rim.
+    - The owner wants thick, smooth, horn-like tentacles that show only about
+      6 studs past the frame.
+      - The side copies are scaled 3.3 and the top one 3.0, giving chains of
+        about 27 and 25 studs. Their knots sit deeper, at x ±12, z 2.8 and
+        y 12.6, z 2.2.
+      - Each visible chain's `Length` attribute is its route length plus
+        about 5.5 studs (4.5 on top). Only that much comes out; the rest
+        stays drawn back behind the wall.
+      - So whatever shows is the thick part near each tentacle's middle. If
+        you change a route, reset its `Length`.
+      - Resizing only the mesh (Handle10.Size) makes them thicker but lumpy
+        at every joint, so scale the whole rig instead.
+      - The side routes stop in front of the post and the tip carries on
+        onto the wall. The top routes start just behind the wall above the
+        hole.
+      - The lower-left route is level (y about 3.7). Sloping down, its long
+        tip dug into the floor.
+    - Bones follow the leader along a smoothed curve, so no joint can fold
+      back. Aiming each bone at a point a fixed distance along the route
+      zigzagged, with 150° joints. Per-bone temporal smoothing made it worse;
+      don't add it back.
+    - The tip is whatever comes out past the route's end, now about 5 studs.
+      It sweeps across slowly, curling one way, holding, then curling the
+      other. The curl is capped so the end swings at most `TipSwing` (1.2
+      studs) to each side, so long horns don't fling into each other.
+    - The owner wants neighbours to move in different directions, so give
+      each tentacle its own `Phase` and `Speed`, never a shared one. Tips curl
+      about 1.7 studs to each side, so neighbours on the same wall need routes
+      at least 4.5 studs apart.
+    - The owner found slow emergence "way too slow" twice. Now a tentacle
+      skips the hidden stretch of its route, appears at the hole within about
+      0.4 s, and settles in about 1 s (CreepSpeed 11).
+    - Each tentacle's hidden run-on is bent into the wall, along its route's
+      backward direction plus the wall's depth. One that pointed slightly
+      into the room left a withdrawn tentacle visible under the ceiling.
+    - Emerging: the rig creeps each tentacle out at its own pace (`open` comes
+      from the eyes' `wanted` flag, not their fade), staggered by `Phase`.
+      The part not yet out lies straight back along the route's run-on: the
+      root bone slides back that far, behind the wall.
+      - A hidden fold-back loop made the chain skip across it, and the tips
+        lunged into the room.
+      - Moving a root stretches the knot's shared skin into spikes. That's
+        only acceptable because it happens behind the wall, so never move a
+        root while its tentacle is out.
+    - Keep waypoints in front of the frame at z -1.45 or less. Closer, the
+      tentacles cut into the posts and header.
+    - Start each route with a waypoint inside the void, about 1.5 studs
+      behind the hole. Without it, the curve cuts through the wall's corner.
+      The top routes drop below the lintel (y 8.3) before coming out.
+    - Check changes in a playtest over a full sweep cycle (~16 s), sampling
+      bones from the client:
+      - no bone inside the wall, posts, header, lintel or ceiling;
+      - no two chains closer than 1.2 studs;
+      - worst visible joint about 45°.
+      Build the test room with Levels.build(2) at y 600, and pin the camera
+      with a RenderStep bound after Camera.client.
 - `Elevator.FloorSelector`: the floor-selector pedestal, saved in its *raised*
   pose. It vanished from the place once and had to be rebuilt; if it's
   missing, Elevator.server hangs on `WaitForChild` and the elevator stops
@@ -165,6 +280,22 @@ rebuilt from transcript data.
 - Playtests:
   - `solo_playtest`, then `eval_server_runtime` / `eval_client_runtime` and
     `simulate_keyboard_input`.
+  - Always close an undo recording, even when the edit fails: run the body in
+    `pcall`, then `FinishRecording` (Commit, or Cancel on error).
+    - A script that errored between `TryBeginRecording` and `FinishRecording`
+      once left a recording open. Every later `TryBeginRecording` then
+      returned nil, so those edits made no undo steps and all sat inside the
+      orphan. One undo rolled them all back: the wall shop "reset" to an old
+      version, and its client script lost its rename.
+    - Check with `ChangeHistoryService:IsRecordingInProgress()`. An orphan
+      can't be finished without its ID, which is gone, so restart Studio to
+      clear it.
+    - `assets/WallShop.rbxm` is a backup of the wall shop template from
+      then.
+  - `solo_playtest` start needs `mode: "play"`. Without it the call fails
+    with a bare "Unknown error".
+  - While a playtest runs, `capture_screenshot` captures the play view, not
+    the edit viewport.
   - The playtest server can restart on its own. If world state "vanishes",
     check uptime before calling it a bug.
 - The owner tests with a regular R15 character. Calibrate arm and grip

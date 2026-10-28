@@ -3,15 +3,18 @@
 -- Rooms butt straight onto the elevator's front facade, which serves as their fourth wall.
 -- Each floor holds one scavenge item, a random pick from ReplicatedStorage.StockItems
 -- (definitions and prices in Shared.StockItems). It carries Value and ItemId attributes.
+-- Floor 2's back wall has a hole with a shop built into it: ServerStorage.WallShop, a
+-- place-only template pivoted at the bottom centre of its opening on the wall's room
+-- face, front on LookVector. Its OpeningSize attribute (Vector2) is the hole cut here.
 
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
 
 local StockItems = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("StockItems"))
 
--- Floor 1 is built by a procedural generator. FoundryLevel is still being finished (it has
--- no Layout/Hub/Pit/Halls yet), so only pick it up once those modules exist and fall back
--- to the complete FactoryLevel generator until then. A broken generator must never stop
--- this module - the Elevator script requires it.
+-- Floor 1 is built by the FoundryLevel generator (the big eight-room steel works). Only pick
+-- it up when all its modules are there, and fall back to the older FactoryLevel generator
+-- otherwise. A broken generator must never stop this module - the Elevator script requires it.
 local FactoryLevel = require(script.Parent.FactoryLevel)
 
 local function loadFoundry()
@@ -19,7 +22,7 @@ local function loadFoundry()
 	if not mod then
 		return nil
 	end
-	for _, child in { "Layout", "Hub", "Pit", "Halls" } do
+	for _, child in { "Config", "Geometry", "Shell", "Props", "Generator", "TilesBasic", "TilesHalls", "TilesCore", "TilesWarehouse" } do
 		if not mod:FindFirstChild(child) then
 			return nil
 		end
@@ -50,6 +53,8 @@ local PALETTES = {
 local RARITY = 1
 
 local LAMP_COLOR = Color3.fromRGB(255, 196, 140)
+
+local WALL_SHOP_LEVEL = 2
 
 local function part(parent, name, size, cframe, color, material)
 	local p = Instance.new("Part")
@@ -225,13 +230,38 @@ function Levels.build(level, base)
 	-- Shell
 	part(room, "Floor", Vector3.new(WIDTH, 1, DEPTH), at(0, -0.5, DEPTH / 2), palette.floor, Enum.Material.WoodPlanks)
 	part(room, "Ceiling", Vector3.new(WIDTH, 1, DEPTH), at(0, HEIGHT + 0.5, DEPTH / 2), palette.trim)
-	part(room, "WallBack", Vector3.new(WIDTH, HEIGHT, 1), at(0, HEIGHT / 2, DEPTH + 0.5), palette.wall, Enum.Material.Fabric)
+	local wallShop = level == WALL_SHOP_LEVEL and ServerStorage:FindFirstChild("WallShop")
+	local opening = wallShop and wallShop:GetAttribute("OpeningSize")
+	if opening then
+		-- The back wall goes up around the shop's hole: a piece either side and one above.
+		local sideW = (WIDTH - opening.X) / 2
+		for _, side in { -1, 1 } do
+			local x = side * (opening.X / 2 + sideW / 2)
+			part(room, "WallBack", Vector3.new(sideW, HEIGHT, 1), at(x, HEIGHT / 2, DEPTH + 0.5), palette.wall, Enum.Material.Fabric)
+		end
+		local overH = HEIGHT - opening.Y
+		part(room, "WallBack", Vector3.new(opening.X, overH, 1), at(0, opening.Y + overH / 2, DEPTH + 0.5), palette.wall, Enum.Material.Fabric)
+		local shop = wallShop:Clone()
+		-- The room runs along base's +Z, so the template's front (-Z) already faces the doors.
+		shop:PivotTo(at(0, 0, DEPTH))
+		shop.Parent = room
+	else
+		part(room, "WallBack", Vector3.new(WIDTH, HEIGHT, 1), at(0, HEIGHT / 2, DEPTH + 0.5), palette.wall, Enum.Material.Fabric)
+	end
 	for _, side in { -1, 1 } do
 		local x = side * (WIDTH / 2 + 0.5)
 		part(room, "WallSide", Vector3.new(1, HEIGHT, DEPTH + 2), at(x, HEIGHT / 2, DEPTH / 2), palette.wall, Enum.Material.Fabric)
 		part(room, "Baseboard", Vector3.new(0.3, 0.8, DEPTH), at(x - side * 0.65, 0.4, DEPTH / 2), palette.trim, Enum.Material.Wood)
 	end
-	part(room, "Baseboard", Vector3.new(WIDTH, 0.8, 0.3), at(0, 0.4, DEPTH - 0.15), palette.trim, Enum.Material.Wood)
+	if opening then
+		local boardW = (WIDTH - opening.X) / 2
+		for _, side in { -1, 1 } do
+			local x = side * (opening.X / 2 + boardW / 2)
+			part(room, "Baseboard", Vector3.new(boardW, 0.8, 0.3), at(x, 0.4, DEPTH - 0.15), palette.trim, Enum.Material.Wood)
+		end
+	else
+		part(room, "Baseboard", Vector3.new(WIDTH, 0.8, 0.3), at(0, 0.4, DEPTH - 0.15), palette.trim, Enum.Material.Wood)
+	end
 	part(room, "Rug", Vector3.new(10, 0.05, 16), at(0, 0.025, DEPTH / 2), palette.trim:Lerp(palette.wall, 0.4), Enum.Material.Fabric)
 
 	makeLamp(room, at(0, HEIGHT, DEPTH * 0.3))
