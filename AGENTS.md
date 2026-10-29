@@ -11,8 +11,6 @@ Only what isn't obvious from the code is listed here.
   to floors where players scavenge items, and the cargo lift sends those items
   up to the store. The owner rejected a pawn counter or merchant inside the
   elevator.
-- The art direction is a warm, dark old hotel: atmospheric, slightly cartoonish
-  but serious.
 
 ## Ground rules from the owner
 
@@ -22,39 +20,11 @@ Only what isn't obvious from the code is listed here.
 - Anchor every part you create.
 - Don't commit unless asked. Commit messages use short imperative subjects, like
   the existing history.
-- Prefer free Creator Store models to props built from primitives. Load a model
-  with `game:GetObjects("rbxassetid://ID")`, because `insert_asset` fails for
-  models. Strip its scripts and Sounds before use.
-- Don't build characters from primitives. The owner deleted a primitive-built
-  elevator "being" and doesn't want it back; ask how a character should be
-  sourced.
-- Size things for a ~5-stud character. A 13-stud door was "far too tall"; the
-  elevator door is 5.2 x 7.5.
 - Don't spam one light fixture; mix the types. The owner cut 21 chandeliers
   down to a few.
 
-## Building style
+## Interaction prompts
 
-- Hand-built boxes (frames, panels, plates, shelves) get single-face 45°
-  chamfered edges, not sharp corners. Cylinders and balls stay as they are.
-  - Build each one from non-overlapping pieces: a core part, two `<name>_Strip`
-    edge strips and four `<name>_Bevel` WedgeParts. The core keeps the name,
-    attributes and children, and gets the attribute `Bevelled = true`.
-  - Never use two crossed full-length cores; their coplanar faces z-fight.
-  - If you resize a bevelled part, delete its `_Strip` / `_Bevel` siblings and
-    rebuild them.
-- The store's walls (`Grocery Store.PawnshopPaneling`) follow the elevator's
-  wall design (`Elevator.Walls`). Both use the same trim stack, colours and
-  bevel sizes, from the top down:
-  - crown and crown step, frieze, brass picture rail
-  - striped Fabric wallpaper
-  - dado with a brass cap
-  - wainscot panels with insets
-  - baseboard
-  Build new shop walls to match.
-  - Outer corners are closed by `<name>_Miter` CSG fills: each trim runs past
-    its end and is cut on the 45° line. Wherever two faces meet, add them, so
-    trim never stops short and leaves a notch.
 - Interaction prompts use Camera.client's popup, pinned to the object: a cream
   hand tapping it, with a key badge and the action text. Never use a
   bottom-of-screen prompt box.
@@ -95,8 +65,6 @@ recording (`ChangeHistoryService:TryBeginRecording`):
   cuts the hole from its `OpeningSize` attribute and clones it in on each visit.
   - It's pivoted at the bottom centre of the opening, on the wall's room face,
     with its front (-Z) facing the room.
-  - The `Void` is black Neon so no light shows inside. Its parts start inside
-    the wall's thickness; flush with the wall face they z-fight.
   - The owner is decorating the shop by hand, so leave its dressing alone.
     The shopkeeper entity is `Eyes` plus `Tentacles`.
   - WallShop.client animates the shopkeeper:
@@ -107,15 +75,10 @@ recording (`ChangeHistoryService:TryBeginRecording`):
         one after another (middle first), and each blinks and glances on its
         own: mostly at the player, sometimes anywhere. The pupils shrink as
         the player comes closer.
-      - Each eye is a stack of sphere meshes. From the room inwards: `Pupil`
-        (black SmoothPlastic, `Look` and `Pupil` attributes), a flattened
-        `Iris` disc (Neon, `Look`), the `Sclera`, then a flattened `Halo`.
-        `Look` parts slide across the eye to glance.
-      - Keep the pupil in front of the iris's front face, and keep the sclera
-        a dim grey-blue. A bright sclera blooms out the iris and pupil under
-        the place's Bloom and DepthOfField.
-      - The client keeps each saved mesh scale and multiplies blinks and
-        pupil size on top.
+      - Each eye's parts are found by name: `Pupil` (attributes `Look`,
+        `Pupil`), `Iris` (`Look`), `Sclera`, `Halo`. `Look` parts slide across
+        the eye to glance. The client keeps each saved mesh scale and
+        multiplies blinks and pupil size on top.
     - `Effects` (tag `ShopEffects`) holds the `Mist`, `Dust` (`DustCloud`
       and `DustGrit`) and `Motes` emitters, saved off. The client switches
       them on while the shop is open, and an emitter's `Burst` attribute
@@ -150,23 +113,13 @@ recording (`ChangeHistoryService:TryBeginRecording`):
       The owner removed the two floor crawlers and found more tentacles too
       busy. The small chains are `Hidden`: from the knots they can't reach
       past the rim.
-    - The owner wants thick, smooth, horn-like tentacles that show only about
-      6 studs past the frame.
-      - The side copies are scaled 3.3 and the top one 3.0, giving chains of
-        about 27 and 25 studs. Their knots sit deeper, at x ±12, z 2.8 and
-        y 12.6, z 2.2.
-      - Each visible chain's `Length` attribute is its route length plus
-        about 5.5 studs (4.5 on top). Only that much comes out; the rest
-        stays drawn back behind the wall.
-      - So whatever shows is the thick part near each tentacle's middle. If
-        you change a route, reset its `Length`.
-      - Resizing only the mesh (Handle10.Size) makes them thicker but lumpy
-        at every joint, so scale the whole rig instead.
-      - The side routes stop in front of the post and the tip carries on
-        onto the wall. The top routes start just behind the wall above the
-        hole.
-      - The lower-left route is level (y about 3.7). Sloping down, its long
-        tip dug into the floor.
+    - Each visible chain's `Length` attribute is its route length plus about 5.5
+      studs (4.5 on top). Only that much comes out; the rest stays drawn back
+      behind the wall. If you change a route, reset its `Length`.
+    - The side routes stop in front of the post and the tip carries on onto the
+      wall. The top routes start just behind the wall above the hole.
+    - The lower-left route is level (y about 3.7). Sloping down, its long tip dug
+      into the floor.
     - Bones follow the leader along a smoothed curve, so no joint can fold
       back. Aiming each bone at a point a fixed distance along the route
       zigzagged, with 150° joints. Per-bone temporal smoothing made it worse;
