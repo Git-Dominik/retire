@@ -27,9 +27,6 @@ decisions, gotchas hit). Keep it short and fix anything it made stale.
 - Anchor every part you create.
 - Don't commit unless asked. Commit messages use short imperative subjects, like
   the existing history.
-- Prefer free Creator Store models to props built from primitives. Load a model
-  with `game:GetObjects("rbxassetid://ID")`, because `insert_asset` fails for
-  models. Strip its scripts and Sounds before use.
 - Don't build characters from primitives. The owner deleted a primitive-built
   elevator "being" and doesn't want it back; ask how a character should be
   sourced.
@@ -129,7 +126,21 @@ recording (`ChangeHistoryService:TryBeginRecording`):
     `Elevator` model.
   - `ElevatorStoreBack` is an older, doorless copy of the elevator. It has to
     keep that name.
-  - `StorageRacks` in the elevator room: the shelves StockRacks fills.
+  - `StorageRacks` in the elevator room: the shelves StockRacks fills. They're
+    boltless rivet shelving (perforated angle `Post`s, `Beam`s, particleboard
+    decks), built in two sizes:
+    - Small (`Rack West 2`, `Rack East 2`, `Rack Back`): four decks named
+      `Shelf`, each holding four small (1×1) items.
+    - Large (`LargeShelf_1/2`): three decks named `Deck`, so StockRacks never
+      takes them for plain boards, and four 2.25-stud `StockSlot`s, two per
+      deck, for items up to 2×2.
+    - The `Hole` parts are non-colliding and non-queryable.
+    - Decks, beams and the posts' outer heels are chamfered (`_Strip` /
+      `_Bevel`). A `Shelf` core must stay thicker than 0.08 studs, or
+      StockRacks takes it for a front lip and stocks no small items there.
+  - `ElevatorRoom.Decor`: Creator Store props in the storage room (box
+    stacks, hand truck, step ladder, mop bucket, clipboard), scripts
+    stripped, all anchored. Keep them clear of the racks' fronts.
   - The `SwingDoor` models (the golden pair into the storage room, the street
     entrance and the staff room door), with an `OpenAngle` attribute, swung by
     SwingDoors.client. It only pushes them for players, so customers walk
@@ -141,6 +152,9 @@ recording (`ChangeHistoryService:TryBeginRecording`):
     of the back rooms.
   - The three papers on the break room's cork board, tagged `ShopNote` with a
     `Shows` attribute (`Day`, `Quota`, `Money`). ShopHUD writes on them.
+  - `BreakRoom.BossNote` on the break room table: the old owner's note, tagged
+    `BossNote`, with a `ReadPrompt`. BossNote.client shows it and the tutorial
+    waits for it. The table's top is crowded; it sits in the one clear corner.
   - `ElevatorEntrance`: the hotel-style surround on the storage room's back
     wall (wood pilasters, brass frame, a floor dial parked on STORE). Its
     `Call Panel` model holds the `Call Plate` prompt and `Status Light`, which
@@ -217,11 +231,13 @@ rebuilt from transcript data.
   - Moving an *anchored* character with `PivotTo` on the client doesn't
     replicate. The server still sees the old position and rejects prompts by
     distance, so unanchor the character first.
-- **Viewmodels lead the camera:** Camera.client smooths the view, but the body
-  turns with the raw mouse. Mid-turn, anything held in torso space is up to
-  `MAX_LOOK_LAG` (15°) ahead of what the player sees.
+- **The body lags the view:** the head turns first. `Humanoid.AutoRotate` is
+  off, and Camera.client turns the root after the smoothed view: only past
+  `HEAD_TURN_FREE` (25°) while standing, straight away while walking. Anything
+  held in torso space can face away from the view; Arms.client swings holds
+  round by the gap.
   - To simulate a mouse turn, rotate `camera.CFrame` in a RenderStep bound at
-    `Camera.Value - 1`. Rotating only the rendered camera never turns the body.
+    `Camera.Value - 1`.
   - Measure viewmodel results in camera space.
 - **Lighting:** never set `Sky.CelestialBodiesShown = false`. It blew out the
   elevator floor with an orange glow.
@@ -243,6 +259,34 @@ rebuilt from transcript data.
   - Tools without them (the Candle) use the default one-handed hold.
 - The held pose tilts by camera pitch × 0.6 about the right shoulder,
   (1, 0.563, 0) in torso space.
+- Taking up a hold (equip, or back from a reach or the journal) eases the hands
+  over `EQUIP_TIME` with smoothstep; letting go blends out at `RELEASE_RATE`.
+- **Your body in first person.** Arms.client's `BodyVisible` step sets
+  `LocalTransparencyModifier` on all of your character every frame (tools are
+  left alone):
+  - The head, and accessories welded to it, stay hidden.
+  - Everything else shows while standing and not looking up. When crouched
+    (`CrouchOffset` below `CROUCH_HIDE`), the camera is inside the body; looking
+    up, only the shoulders, right beside the eye, could be in view. Then only
+    the forearm and hand of an arm in use show.
+- The eye's position is static: the owner removed head bob and the sprint
+  push. Only crouching and looking down move it. Speed shows through the FOV
+  instead (`WALK_FOV` / `SPRINT_FOV` in Camera.client).
+  - Camera.client puts the camera on `camera.Focus`. Roblox's first-person
+    camera hangs 0.5 studs behind it along the view, which swung it into the
+    neck (and through walls behind you) when looking up.
+  - Arms.client takes the forward pitch out of your own `Root` and `Waist`
+    joints each frame (only on your screen), or the walk and run lean puts
+    the top of the torso in front of the eye.
+  - Looking down, the eye moves forward along the view (`LOOK_DOWN_FORWARD`,
+    2 studs at straight down, the owner's pick, stopped short of walls) so you
+    see past your chest. Bulky avatars' bellies stick out past their toes.
+  - While you hold a tool it eases to `HELD_LOOK_DOWN_FORWARD`, or the eye
+    would pass the held item.
+- **Climbing** is off (Camera.client), except within `LADDER_REACH` of a
+  `TrussPart` (the FactoryLevel ladder). Otherwise humanoids climb shelving.
+  The client only writes the state when the near-ladder answer changes, so
+  don't re-enable Climbing from elsewhere.
 
 ### Stocking (StockingService / StockingClient / StockRacks / StockItems / StockingConfig)
 
@@ -460,4 +504,40 @@ has the details; this is the part that crosses scripts.
 - `ReadingJournal` (Player): set while the journal is open. Camera.client
   holds pitch, Arms.client stops holding tools, and StockingClient puts the
   box down.
-- `HasJournal` (Player): the player picked up the journal in the lobby.
+- `HasJournal` (Player): the player picked up the journal from its stand in the
+  break room. The stand (Journal.server, tagged `JournalStand`) is built into the
+  `Grocery Store` model so it's parked with the store, not destroyed.
+
+### Noise (server `Noise` module)
+
+- For enemy AI: `Noise.of(player)` returns `Noise.Level.None/Low/High` (0/1/2).
+  Crouching or standing is None, walking Low, sprinting High.
+- It's read from the root's replicated horizontal speed, because crouch and
+  sprint only exist on the client. The speeds live in `MovementConfig`
+  (shared); Camera.client uses them, so change them there.
+- Picking up an item is High for 1.5s: anything that hands a player an item
+  calls `Noise.pickup(player)` (Elevator.server floor items, StockingService
+  shop items).
+
+### Tutorial (Tutorial.server / TutorialClient / BossNote.client)
+
+- Played once per player, ever: the owner wants it saved in a DataStore, not per
+  session. Tutorial.server loads `PlayerProgress[UserId].TutorialDone` into the
+  `TutorialDone` Player attribute (unset while loading; false when the store
+  can't be read, e.g. Studio without API access). The client fires
+  `TutorialFinished` at the end; `TutorialFinished:FireServer("Reset")` (F2 dev
+  menu, Studio only) clears it.
+- Steps, in the owner's order: take the journal, read the boss's note, call the
+  elevator, choose a floor, three cargo trips (arrow on the nearest floor item,
+  then the lift car, then the send button), ride back up, then stock (nearest
+  rack item, then nearest furniture whose `StockPrompt` StockingClient enabled)
+  until the shop is full or the racks are empty.
+- Each step ticks off from shared world state and latches, and only leads where
+  it can be done (journal and note need the store), so it works alongside other
+  players. TutorialClient owns the single world arrow and a gold `Highlight`
+  on the target. The owner rejected breadcrumb dots along a path. The
+  journal's To do page shows its `todoText()`.
+- No on-screen notice panel: the owner found it ugly. Don't add one back.
+- Loot: plain rooms hold 4 items (table, two side tables, one on the floor);
+  floor 1 adds up to `EXTRA_LOOT` (5) on the generator's `LootSpawn` markers.
+  `Levels.build` returns the room and a list of item parts.
