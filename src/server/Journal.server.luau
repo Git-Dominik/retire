@@ -70,6 +70,7 @@ prompt.KeyboardKeyCode = Enum.KeyCode.E
 prompt.HoldDuration = 0.3
 prompt.MaxActivationDistance = 7
 prompt.RequiresLineOfSight = false
+prompt:SetAttribute("IgnoreSight", true) -- stays usable if Camera.client's sight scope widens
 prompt.Parent = book.Cover
 
 prompt.Triggered:Connect(function(player)

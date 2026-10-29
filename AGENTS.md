@@ -16,8 +16,6 @@ decisions, gotchas hit). Keep it short and fix anything it made stale.
   to floors where players scavenge items, and the cargo lift sends those items
   up to the store. The owner rejected a pawn counter or merchant inside the
   elevator.
-- The art direction is a warm, dark old hotel: atmospheric, slightly cartoonish
-  but serious.
 
 ## Ground rules from the owner
 
@@ -27,39 +25,11 @@ decisions, gotchas hit). Keep it short and fix anything it made stale.
 - Anchor every part you create.
 - Don't commit unless asked. Commit messages use short imperative subjects, like
   the existing history.
-- Prefer free Creator Store models to props built from primitives. Load a model
-  with `game:GetObjects("rbxassetid://ID")`, because `insert_asset` fails for
-  models. Strip its scripts and Sounds before use.
-- Don't build characters from primitives. The owner deleted a primitive-built
-  elevator "being" and doesn't want it back; ask how a character should be
-  sourced.
-- Size things for a ~5-stud character. A 13-stud door was "far too tall"; the
-  elevator door is 5.2 x 7.5.
 - Don't spam one light fixture; mix the types. The owner cut 21 chandeliers
   down to a few.
 
-## Building style
+## Interaction prompts
 
-- Hand-built boxes (frames, panels, plates, shelves) get single-face 45°
-  chamfered edges, not sharp corners. Cylinders and balls stay as they are.
-  - Build each one from non-overlapping pieces: a core part, two `<name>_Strip`
-    edge strips and four `<name>_Bevel` WedgeParts. The core keeps the name,
-    attributes and children, and gets the attribute `Bevelled = true`.
-  - Never use two crossed full-length cores; their coplanar faces z-fight.
-  - If you resize a bevelled part, delete its `_Strip` / `_Bevel` siblings and
-    rebuild them.
-- The store's walls (`Grocery Store.PawnshopPaneling`) follow the elevator's
-  wall design (`Elevator.Walls`). Both use the same trim stack, colours and
-  bevel sizes, from the top down:
-  - crown and crown step, frieze, brass picture rail
-  - striped Fabric wallpaper
-  - dado with a brass cap
-  - wainscot panels with insets
-  - baseboard
-  Build new shop walls to match.
-  - Outer corners are closed by `<name>_Miter` CSG fills: each trim runs past
-    its end and is cut on the 45° line. Wherever two faces meet, add them, so
-    trim never stops short and leaves a notch.
 - Interaction prompts use Camera.client's popup, pinned to the object: a cream
   hand tapping it, with a key badge and the action text. Never use a
   bottom-of-screen prompt box.
@@ -96,6 +66,104 @@ recording (`ChangeHistoryService:TryBeginRecording`):
   furniture (see below).
 - `VolumetricBeam` tags, and the EmployeeRoom `Hinge` / `OpenAngle` /
   `SwingTime` / `Partner` attributes.
+- `ServerStorage.WallShop`: floor 2's shop in a hole in the back wall. Levels
+  cuts the hole from its `OpeningSize` attribute and clones it in on each visit.
+  - It's pivoted at the bottom centre of the opening, on the wall's room face,
+    with its front (-Z) facing the room.
+  - The owner is decorating the shop by hand, so leave its dressing alone.
+    The shopkeeper entity is `Eyes` plus `Tentacles`.
+  - WallShop.client animates the shopkeeper:
+    - `Eyes` (tag `ShopEyes`) is saved hidden. The owner chose a cluster of
+      mismatched eyes over two big ones: `Eye1`..`Eye7` models (`Size`
+      attribute) around a `Root` that carries the Glow light.
+      - The cluster opens within 22 studs and shuts past 26. The eyes open
+        one after another (middle first), and each blinks and glances on its
+        own: mostly at the player, sometimes anywhere. The pupils shrink as
+        the player comes closer.
+      - Each eye's parts are found by name: `Pupil` (attributes `Look`,
+        `Pupil`), `Iris` (`Look`), `Sclera`, `Halo`. `Look` parts slide across
+        the eye to glance. The client keeps each saved mesh scale and
+        multiplies blinks and pupil size on top.
+    - `Effects` (tag `ShopEffects`) holds the `Mist`, `Dust` (`DustCloud`
+      and `DustGrit`) and `Motes` emitters, saved off. The client switches
+      them on while the shop is open, and an emitter's `Burst` attribute
+      puffs out that many particles as it opens.
+      - The dust only reads on the dark floor because it's partly self-lit
+        (LightInfluence about 0.3).
+      - While the player is close, the client also adds a local `ShopDread`
+        ColorCorrection to Lighting, which desaturates and darkens the room.
+    - Sounds are made by WallShop.client and play locally. The IDs are in its
+      config, all checked as loading in this place:
+      - two muffled loops (an EqualizerSoundEffect cuts the highs) that fade
+        with the shop: the ambience bed 9114244977, slowed, and the swell
+        9043337370, restarted from its start each time the eyes open;
+      - breathing now and then: 9113983944, 9113984054 and 9113984056.
+      The owner liked the ambience and asked for it looped and more muffled.
+      They called the tentacle squirm and slap sounds "very bad", so the
+      tentacles stay silent. TentacleRig.update still returns its "emerge"
+      and "grip" events, unused.
+    - `Tentacles` holds three copies (`Left`, `Right`, `Top`, tag
+      `ShopTentacles`) of the free "Animated tentacles" rig (135280093987265).
+      Each copy has 10 bone chains under one `RootPart`. Each copy's knot sits
+      behind the wall beside or above the hole, so the tentacles reach in from
+      the dark edges, never out of the eyes.
+    - Shared.TentacleRig poses them. Its header documents the per-chain
+      attributes: `Mode` (`Grip` / `Reach` / `Hidden`), `Way1`..`WayN`,
+      `HookNormal`, `Sway`, `Speed` and `Phase`.
+    - Five tentacles show, deliberately lopsided because the owner found a
+      symmetric layout too perfect:
+      - two on the left: one rising high, one sloping low;
+      - one on the right at mid height;
+      - two over the header, off-centre (x -3.1 and +1.4).
+      The owner removed the two floor crawlers and found more tentacles too
+      busy. The small chains are `Hidden`: from the knots they can't reach
+      past the rim.
+    - Each visible chain's `Length` attribute is its route length plus about 5.5
+      studs (4.5 on top). Only that much comes out; the rest stays drawn back
+      behind the wall. If you change a route, reset its `Length`.
+    - The side routes stop in front of the post and the tip carries on onto the
+      wall. The top routes start just behind the wall above the hole.
+    - The lower-left route is level (y about 3.7). Sloping down, its long tip dug
+      into the floor.
+    - Bones follow the leader along a smoothed curve, so no joint can fold
+      back. Aiming each bone at a point a fixed distance along the route
+      zigzagged, with 150° joints. Per-bone temporal smoothing made it worse;
+      don't add it back.
+    - The tip is whatever comes out past the route's end, now about 5 studs.
+      It sweeps across slowly, curling one way, holding, then curling the
+      other. The curl is capped so the end swings at most `TipSwing` (1.2
+      studs) to each side, so long horns don't fling into each other.
+    - The owner wants neighbours to move in different directions, so give
+      each tentacle its own `Phase` and `Speed`, never a shared one. Tips curl
+      about 1.7 studs to each side, so neighbours on the same wall need routes
+      at least 4.5 studs apart.
+    - The owner found slow emergence "way too slow" twice. Now a tentacle
+      skips the hidden stretch of its route, appears at the hole within about
+      0.4 s, and settles in about 1 s (CreepSpeed 11).
+    - Each tentacle's hidden run-on is bent into the wall, along its route's
+      backward direction plus the wall's depth. One that pointed slightly
+      into the room left a withdrawn tentacle visible under the ceiling.
+    - Emerging: the rig creeps each tentacle out at its own pace (`open` comes
+      from the eyes' `wanted` flag, not their fade), staggered by `Phase`.
+      The part not yet out lies straight back along the route's run-on: the
+      root bone slides back that far, behind the wall.
+      - A hidden fold-back loop made the chain skip across it, and the tips
+        lunged into the room.
+      - Moving a root stretches the knot's shared skin into spikes. That's
+        only acceptable because it happens behind the wall, so never move a
+        root while its tentacle is out.
+    - Keep waypoints in front of the frame at z -1.45 or less. Closer, the
+      tentacles cut into the posts and header.
+    - Start each route with a waypoint inside the void, about 1.5 studs
+      behind the hole. Without it, the curve cuts through the wall's corner.
+      The top routes drop below the lintel (y 8.3) before coming out.
+    - Check changes in a playtest over a full sweep cycle (~16 s), sampling
+      bones from the client:
+      - no bone inside the wall, posts, header, lintel or ceiling;
+      - no two chains closer than 1.2 studs;
+      - worst visible joint about 45°.
+      Build the test room with Levels.build(2) at y 600, and pin the camera
+      with a RenderStep bound after Camera.client.
 - `Elevator.FloorSelector`: the floor-selector pedestal, saved in its *raised*
   pose. It vanished from the place once and had to be rebuilt; if it's
   missing, Elevator.server hangs on `WaitForChild` and the elevator stops
@@ -185,6 +253,22 @@ rebuilt from transcript data.
     from `eval_client_runtime` works once the prompt has been shown (camera aimed
     at it, line of sight clear).
   - Shoplifters will take test stock you leave on shop furniture.
+  - Always close an undo recording, even when the edit fails: run the body in
+    `pcall`, then `FinishRecording` (Commit, or Cancel on error).
+    - A script that errored between `TryBeginRecording` and `FinishRecording`
+      once left a recording open. Every later `TryBeginRecording` then
+      returned nil, so those edits made no undo steps and all sat inside the
+      orphan. One undo rolled them all back: the wall shop "reset" to an old
+      version, and its client script lost its rename.
+    - Check with `ChangeHistoryService:IsRecordingInProgress()`. An orphan
+      can't be finished without its ID, which is gone, so restart Studio to
+      clear it.
+    - `assets/WallShop.rbxm` is a backup of the wall shop template from
+      then.
+  - `solo_playtest` start needs `mode: "play"`. Without it the call fails
+    with a bare "Unknown error".
+  - While a playtest runs, `capture_screenshot` captures the play view, not
+    the edit viewport.
   - The playtest server can restart on its own. If world state "vanishes",
     check uptime before calling it a bug.
 - The owner tests with a regular R15 character. Calibrate arm and grip
@@ -200,6 +284,19 @@ rebuilt from transcript data.
   - Prompts off screen can't be triggered. Point the camera at the target
     before simulating E in a test.
   - The elevator call plate near *Rack West 1* also uses E.
+  - **Line of sight:** a prompt whose object sits behind its own trim never
+    shows if `RequiresLineOfSight` is true (the call plate's `ButtonRing`
+    blocks its ray, as does the selector pedestal). Prompt scripts set it to
+    `false` on purpose.
+    - Camera.client once forced `true` on every prompt in the workspace. That
+      hid the journal, call plate, floor selector, elevator chairs, bell and
+      Send up button. It now applies only to prompts under
+      `Grocery Store.Employee Area`, where through-the-wall use is a risk.
+    - A prompt in that area can opt out with the `IgnoreSight` attribute. The
+      journal, call plate and selector prompts set it too, so they stay safe if
+      the scope is widened.
+    - When a prompt's popup doesn't appear, raycast from the player's side to
+      the prompt's part and see what it hits before blaming the script.
 - **Tools:**
   - Setting `Tool.Grip` on the client does nothing because the weld is made on
     the server. Set Grip on the server.
@@ -265,8 +362,8 @@ The server is authoritative. StockingClient only decides which Stock prompts
 - Every filled slot has a Take prompt (`ShelfTakePrompt`), shown while your
   hands are empty. It lifts the item back off into a tool (via
   `Levels.placeItem`), so items can be moved or handed to a request client.
-- **Prompt placement.** Camera.client forces `RequiresLineOfSight` on every
-  prompt, so prompts hang from attachments in front of everything, not inside
+- **Prompt placement.** StockingService sets `RequiresLineOfSight` on its
+  prompts, so prompts hang from attachments in front of everything, not inside
   the furniture. Stock goes on `StockPoint`, at the next free slot. Each take
   prompt goes on its slot's `ShelfTakePoint`, and moves when the slot fills or
   empties.

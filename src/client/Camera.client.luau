@@ -440,11 +440,17 @@ if not touch then
 	workspace.DescendantAdded:Connect(useCustomStyle)
 end
 
--- Every prompt needs a clear view, so none can be used through a wall. Set here
--- rather than per script because many prompts are made in Studio or in other
--- scripts that spell it out as false.
+-- Prompts in the staff area can't be used through a wall. Scoped to that area because
+-- every other prompt (the elevator car, bell, cargo lift, floor items, shop racks) is
+-- placed by a script that sets RequiresLineOfSight = false on purpose, and forcing it on
+-- hid them behind their own trim. IgnoreSight exempts a single prompt inside the area.
 local function requireSight(d)
-	if d:IsA("ProximityPrompt") then
+	if not d:IsA("ProximityPrompt") or d:GetAttribute("IgnoreSight") then
+		return
+	end
+	local store = workspace:FindFirstChild("Grocery Store")
+	local staff = store and store:FindFirstChild("Employee Area")
+	if staff and d:IsDescendantOf(staff) then
 		d.RequiresLineOfSight = true
 	end
 end

@@ -308,6 +308,7 @@ local function makeSelectorPrompt(parent, action, hold)
 	prompt.HoldDuration = hold
 	prompt.MaxActivationDistance = 6
 	prompt.RequiresLineOfSight = false
+	prompt:SetAttribute("IgnoreSight", true) -- the pedestal's own parts would block sight
 	prompt.Parent = parent
 	return prompt
 end
@@ -408,6 +409,7 @@ if callPanel then
 	callPrompt.ObjectText = "Elevator"
 	callPrompt.KeyboardKeyCode = Enum.KeyCode.E
 	callPrompt.RequiresLineOfSight = false
+	callPrompt:SetAttribute("IgnoreSight", true) -- the button ring sits in front of the plate
 
 	-- A short metal click from the button itself, every time it's pressed.
 	local pressSound = makeSound(callPanel["Call Plate"], "ButtonPress", "rbxassetid://9120097918", {
