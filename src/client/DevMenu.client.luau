@@ -1,6 +1,7 @@
 -- F2 dev menu. Available to every player. Everything goes through the server's
 -- ElevatorDev remote (Elevator.server), including spawning a stock item at your feet
--- by its ItemId or name from Shared.StockItems.
+-- by its ItemId or name from Shared.StockItems, except Reset tutorial (Tutorial.server's
+-- TutorialFinished remote, which only honours it in Studio).
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -104,6 +105,10 @@ button("Open elevator", 4, function()
 end)
 button("Descend (skip item)", 5, function()
 	devRemote:FireServer("Descend")
+end)
+-- Clears the saved tutorial (Tutorial.server, Studio only) so it plays again from the top.
+button("Reset tutorial", 10, function()
+	ReplicatedStorage:WaitForChild("TutorialFinished"):FireServer("Reset")
 end)
 -- Matches an ItemId or display name, ignoring case and spaces ("reimu", "Ring box").
 local function findItem(text)

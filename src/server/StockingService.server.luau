@@ -42,6 +42,7 @@ local Config = require(Shared:WaitForChild("StockingConfig"))
 local StockItems = require(Shared:WaitForChild("StockItems"))
 local StockRacks = require(script.Parent:WaitForChild("StockRacks"))
 local Levels = require(script.Parent:WaitForChild("Levels"))
+local Noise = require(script.Parent:WaitForChild("Noise"))
 
 local store = workspace:WaitForChild("Grocery Store")
 
@@ -240,6 +241,7 @@ local function giveTool(player, root, item)
 	end)
 	tool.Parent = player.Backpack
 	character:FindFirstChildOfClass("Humanoid"):EquipTool(tool)
+	Noise.pickup(player)
 end
 
 local function take(player, item)

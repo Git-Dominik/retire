@@ -4,12 +4,15 @@
 -- While someone is reading, a small book icon floats above their head for everyone else
 -- (Journal.client fires the JournalRead remote as the book goes up or down; the server
 -- owns the icon so it replicates, and hides it from the reader themselves).
--- The stand sits where the floor rooms get built, so it goes once we leave the lobby.
+-- The stand is built into the Grocery Store model, so it's parked with the store while the
+-- elevator is down and comes back with it. It carries the JournalStand tag, which
+-- Journal.client uses to hide the book again for whoever already took theirs.
 
+local CollectionService = game:GetService("CollectionService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
-local elevator = workspace:WaitForChild("Elevator")
+local store = workspace:WaitForChild("Grocery Store")
 
 -- In the break room, against the wall under the cork board, left of the lockers.
 local STAND_POSITION = Vector3.new(13.8, 1.1, -49.55)
@@ -70,19 +73,15 @@ prompt.KeyboardKeyCode = Enum.KeyCode.E
 prompt.HoldDuration = 0.3
 prompt.MaxActivationDistance = 7
 prompt.RequiresLineOfSight = false
+prompt:SetAttribute("IgnoreSight", true) -- Camera.client forces sight on every other prompt
 prompt.Parent = book.Cover
 
 prompt.Triggered:Connect(function(player)
 	player:SetAttribute("HasJournal", true)
 end)
 
-stand.Parent = workspace
-
-elevator:GetAttributeChangedSignal("Level"):Connect(function()
-	if (elevator:GetAttribute("Level") or 0) > 0 and stand.Parent then
-		stand:Destroy()
-	end
-end)
+CollectionService:AddTag(stand, "JournalStand")
+stand.Parent = store
 
 -- ================= READING ICON =================
 local readRemote = Instance.new("RemoteEvent")

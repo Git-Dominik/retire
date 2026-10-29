@@ -201,6 +201,20 @@ rebuilt from transcript data.
   - Shoplifters will take test stock you leave on shop furniture.
   - The playtest server can restart on its own. If world state "vanishes",
     check uptime before calling it a bug.
+- MCP can't get new meshes into Studio: `upload_asset` fails on FBX Models,
+  `AssetService:CreateAssetAsync` reports "not available yet", and there's no
+  scriptable 3D importer. The owner imports each FBX by hand (File → Import 3D);
+  placement and materials can then be scripted.
+- Blender-built props live in `assets/<name>/` (FBX, `_apply_materials.luau`,
+  `_manifest.md`), and their build scripts are in `assets/factory_props_src`
+  (`dtk.py` stands in for the guide's missing `doors_toolkit.py`). Blender front
+  is -Y, which becomes Roblox -Z. `assets/factory_fbx/` holds copies of all of
+  them for one mass import.
+  - Moving parts can't be baked into the mesh. `workspace.FuelTank.Gauges` (an
+    Atomic-streaming Model, so its client script never runs before its parts
+    arrive) covers each baked needle with a `Face` disc and swings a separate
+    `Needle` from its `FacePivot` (relative to the `Face`) / `Offset` attributes (`GaugeNeedles`, a Script
+    with RunContext Client). It's place-only, not in `src`.
 - The owner tests with a regular R15 character. Calibrate arm and grip
   numbers against that rig.
 - `workspace.StreamingEnabled` is on. Clients may not have far-away parts, so

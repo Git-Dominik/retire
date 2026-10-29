@@ -1,6 +1,15 @@
 -- Right arm animation on the player's own avatar arm: it reaches for whatever
--- you interact with and holds a carried item up in front of you. In first
--- person only the forearm and hand are shown, and only while in use.
+-- you interact with and holds a carried item up in front of you. Taking up an
+-- item (equipping it, or coming back to it after a reach or the journal) eases
+-- the hands onto it over EQUIP_TIME, and letting go eases them back down.
+--
+-- It also owns what you see of yourself in first person: your body shows
+-- (Camera.client tips the eye forward as you look down, so you see past your
+-- chest), but not your head or anything worn on it. Crouching only drops the
+-- camera into the body, and looking up only the shoulders could be in view, right
+-- beside the eye, so then just the forearm and hand of an arm in use show.
+-- Your own torso is kept upright (no walk or run lean), or its top would fill
+-- the bottom of the view under the fixed eye.
 --
 -- A two-bone IK solve places the hand's grip point on a target, and the result
 -- is written into the R15 shoulder and elbow joints (AnimationConstraints) during
@@ -45,6 +54,13 @@ local REACH_TIME = 0.2
 local TARGET_RATE = 22
 local WEIGHT_RATE = 20
 local PITCH_RATE = 10
+-- Seconds the hands take to come onto a newly held item, and how quickly an arm
+-- that lets go settles back into the Animator's pose.
+local EQUIP_TIME = 0.4
+local RELEASE_RATE = 8
+-- Crouched deeper than this (CrouchOffset, studs) and the camera is inside the
+-- body, so the body is hidden.
+local CROUCH_HIDE = -0.3
 -- Small life on top of the hold pose.
 local BREATH_AMOUNT = 0.015
 local WALK_SWAY = 0.035
@@ -282,7 +298,7 @@ end
 -- locked onto once the hand has come close, so a regrab still eases in. Returns
 -- whether the arm is in use and should be posed.
 local function track(arm, rig, goal, torsoCf, dt, exact)
-	arm.weight = approach(arm.weight, goal and 1 or 0, WEIGHT_RATE, dt)
+	arm.weight = approach(arm.weight, goal and 1 or 0, goal and WEIGHT_RATE or RELEASE_RATE, dt)
 	if goal then
 		-- Starting from rest, ease out from wherever the hand actually is.
 		if not arm.target or arm.weight < 0.02 then
@@ -298,6 +314,12 @@ local function track(arm, rig, goal, torsoCf, dt, exact)
 		arm.target = nil
 	end
 	return arm.target ~= nil
+end
+
+-- Where an arm's hand is now (upper-torso space): its target while it's posed,
+-- otherwise wherever the Animator has it.
+local function handAt(arm, rig, torsoCf)
+	return arm.weight > 0.02 and arm.target or torsoCf:PointToObjectSpace(rig.grip.WorldPosition)
 end
 
 -- Blends the arm toward reaching its target, or back to whatever the Animator is
@@ -328,8 +350,23 @@ RunService.PreSimulation:Connect(function(dt)
 		if not rig then
 			continue
 		end
-		local torsoCf = rig.torso.CFrame
 		local isLocal = character == player.Character
+		if isLocal then
+			-- Walking and running lean the torso forward under the eye, which stays put
+			-- (Camera.client), so the top of it fills the bottom of the view. Stand
+			-- your own torso up, only on your screen.
+			local lowerTorso = character:FindFirstChild("LowerTorso")
+			local root = lowerTorso and lowerTorso:FindFirstChild("Root")
+			for _, joint in { root, rig.torso:FindFirstChild("Waist") } do
+				if joint and joint:IsA("Motor6D") then
+					local t = joint.Transform
+					local _, yaw, roll = t:ToEulerAnglesYXZ()
+					joint.Transform = CFrame.new(t.Position)
+						* CFrame.fromEulerAnglesYXZ(0, yaw, roll)
+				end
+			end
+		end
+		local torsoCf = rig.torso.CFrame
 		local leftRig = rigOf(s.left, character)
 		if isLocal then
 			-- Crouching only drops the camera (Camera.client), not the body. Drop your
@@ -348,6 +385,8 @@ RunService.PreSimulation:Connect(function(dt)
 		-- Pick this frame's targets, in upper-torso space. A two-handed hold never
 		-- lets go to reach.
 		local goal, leftGoal
+		local easingTool = s.easeTool
+		s.easeTool = nil
 		if now < s.reachUntil and not leftHoldPoint then
 			goal = torsoCf:PointToObjectSpace(s.reachWorld)
 		elseif tool and not player:GetAttribute("ReadingJournal") then
@@ -441,6 +480,25 @@ RunService.PreSimulation:Connect(function(dt)
 			if leftGoal then
 				leftGoal += pull
 			end
+
+			-- Coming onto this item (just equipped, or back from a reach or the
+			-- journal), each hand eases over from wherever it was, slow at both ends.
+			-- (An item with a Handle places the left hand from the right's target, so
+			-- it comes along.)
+			s.easeTool = tool
+			if easingTool ~= tool then
+				s.easeAt = now
+				s.easeFrom = handAt(s.right, rig, torsoCf)
+				s.easeFromLeft = leftRig and handAt(s.left, leftRig, torsoCf)
+			end
+			local t = math.min((now - s.easeAt) / EQUIP_TIME, 1)
+			if t < 1 then
+				t = t * t * (3 - 2 * t)
+				goal = s.easeFrom:Lerp(goal, t)
+				if leftGoal and s.easeFromLeft then
+					leftGoal = s.easeFromLeft:Lerp(leftGoal, t)
+				end
+			end
 		end
 
 		-- Pressed far enough into a wall, the left hand lets go and rests beside the
@@ -494,24 +552,76 @@ RunService.PreSimulation:Connect(function(dt)
 	end
 end)
 
--- First person hides your whole body; bring the forearm and hand back while the
--- arm is in use. The camera module only rewrites transparency when zoom changes,
--- so this sets it every frame, after the camera has updated.
-local SHOWN_PARTS = { right = { "RightLowerArm", "RightHand" }, left = { "LeftLowerArm", "LeftHand" } }
-RunService:BindToRenderStep("ArmVisible", Enum.RenderPriority.Camera.Value + 3, function()
+-- First person hides your whole body; bring it back. Each piece of the
+-- character (parts, decals, accessories, but not tools) is grouped by the body
+-- part it's on: "head" stays hidden, as it would fill the view; "right" and
+-- "left" (forearm and hand) show while standing (and not looking up) or while
+-- that arm is in use; "body" shows while standing and not looking up. The
+-- camera module only rewrites transparency when zoom changes, so this sets it
+-- every frame, after the camera has updated.
+local FOREARM_GROUPS = {
+	RightLowerArm = "right",
+	RightHand = "right",
+	LeftLowerArm = "left",
+	LeftHand = "left",
+}
+
+local pieces, piecesOf -- the local character's pieces, rebuilt when it changes
+
+local function groupOf(piece)
+	local part = piece:IsA("Decal") and piece.Parent or piece
+	local accessory = piece:FindFirstAncestorOfClass("Accessory")
+	if accessory then
+		-- An accessory is on whatever its Handle is welded to.
+		local handle = accessory:FindFirstChild("Handle")
+		local weld = handle and handle:FindFirstChildWhichIsA("JointInstance")
+		part = weld and (weld.Part0 == handle and weld.Part1 or weld.Part0)
+	end
+	if not part or part.Name == "Head" then
+		return "head"
+	end
+	return FOREARM_GROUPS[part.Name] or "body"
+end
+
+local function piecesFor(character)
+	if piecesOf ~= character then
+		piecesOf, pieces = character, nil
+		local function changed()
+			if piecesOf == character then
+				pieces = nil
+			end
+		end
+		character.DescendantAdded:Connect(changed)
+		character.DescendantRemoving:Connect(changed)
+	end
+	if not pieces then
+		pieces = {}
+		for _, d in character:GetDescendants() do
+			if (d:IsA("BasePart") or d:IsA("Decal")) and not d:FindFirstAncestorOfClass("Tool") then
+				table.insert(pieces, { instance = d, group = groupOf(d) })
+			end
+		end
+	end
+	return pieces
+end
+
+RunService:BindToRenderStep("BodyVisible", Enum.RenderPriority.Camera.Value + 3, function()
 	local character = player.Character
 	local s = character and arms[character]
 	if not s then
 		return
 	end
-	for key, names in SHOWN_PARTS do
-		local shown = s[key].weight > 0.05
-		for _, name in names do
-			local part = character:FindFirstChild(name)
-			if part then
-				part.LocalTransparencyModifier = shown and 0 or 1
-			end
-		end
+	-- Looking up, the run swing lifts the shoulders into the bottom of the view.
+	local standing = (player:GetAttribute("CrouchOffset") or 0) > CROUCH_HIDE
+		and camera.CFrame.LookVector.Y <= 0
+	local shown = {
+		head = false,
+		body = standing,
+		right = standing or s.right.weight > 0.05,
+		left = standing or s.left.weight > 0.05,
+	}
+	for _, piece in piecesFor(character) do
+		piece.instance.LocalTransparencyModifier = shown[piece.group] and 0 or 1
 	end
 end)
 

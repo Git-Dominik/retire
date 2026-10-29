@@ -7,15 +7,14 @@
 -- the view turns only while the right mouse button is held.
 -- Everything moves with the same exponential smoothing as the camera and
 -- movement (no tweens), so it chases its target the instant input changes.
--- Guides holds the to-do list for the current phase of the game (see TASKS below):
--- each line is ticked off as the state other scripts publish changes. Floor tracks the
--- current floor's item and the cargo lift; Money shows the Player "Money" attribute
--- (set by Cargo.server, this session only) and the deliveries behind it.
--- The current to-do step also gets a bobbing arrow over its object in the world
--- (the elevator's floor selector, floor item, cargo lift car and send button). Until you
--- take it, the lobby book carries a bobbing arrow marker (built here,
--- so it disappears for you alone). The camera tilt lives in Camera.client, which watches the ReadingJournal
--- attribute this script sets on the local player.
+-- Guides holds the To do page: the first-time tutorial's steps while it runs, the daily
+-- routine after (TutorialClient, which also owns the arrow over each step's object).
+-- Floor tracks the current floor's items and the cargo lift; Money shows the Player "Money"
+-- attribute (set by Cargo.server, this session only) and the deliveries behind it.
+-- Once you've taken your copy, the stand's book (tagged JournalStand) is hidden for you
+-- alone, again each time the store comes back from being put away. The camera tilt lives
+-- in Camera.client, which watches the ReadingJournal attribute this script sets on the
+-- local player.
 -- The book is laid out at full size each frame, then shrunk towards the camera (BOOK_SCALE)
 -- so walls can't clip through it.
 -- The first page shows the current day from the workspace DayNumber attribute
@@ -81,11 +80,7 @@ local HAND = Font.fromEnum(Enum.Font.Kalam)
 local HAND_BOLD = Font.new(HAND.Family, Enum.FontWeight.Bold)
 
 -- ================= TO-DO LIST =================
--- Tasks are grouped by phase. The phase is the workspace attribute "Phase"
--- ("Night" when unset), so a day cycle only has to set it. Each `done` reads
--- state other scripts already publish; a task stays ticked for the rest of its
--- phase even if that state resets (the cargo value drops to 0 after a send).
-local DEFAULT_PHASE = "Night"
+local TutorialClient = require(script.Parent:WaitForChild("TutorialClient"))
 local CHECK_INK = "#701e1a"
 
 local function carryingScavenged()
@@ -108,159 +103,6 @@ local function liftAttribute(name)
 	return lift and lift:GetAttribute(name) or 0
 end
 
--- Markers need a BasePart to hang from; fixtures may be parts or models.
-local function basePartOf(instance)
-	if not instance then
-		return nil
-	end
-	if instance:IsA("BasePart") then
-		return instance
-	end
-	if instance:IsA("Model") then
-		return instance.PrimaryPart or instance:FindFirstChildWhichIsA("BasePart", true)
-	end
-	return nil
-end
-
-local function elevatorChild(...)
-	local instance = workspace:FindFirstChild("Elevator")
-	for _, name in { ... } do
-		instance = instance and instance:FindFirstChild(name)
-	end
-	return instance
-end
-
-local function holdingShopItem()
-	local tool = player.Character and player.Character:FindFirstChildOfClass("Tool")
-	return tool ~= nil and tool:GetAttribute("ShopItem") == true
-end
-
--- True once every piece of furniture is full (and there is some).
-local function shopStocked()
-	local furniture = CollectionService:GetTagged("StockFurniture")
-	for _, model in furniture do
-		if (model:GetAttribute("FreeSlots") or 0) > 0 then
-			return false
-		end
-	end
-	return #furniture > 0
-end
-
-local TASKS = {
-	Night = {
-		{
-			id = "descend",
-			text = "Ride the elevator down",
-			target = function()
-				return elevatorChild("FloorSelector")
-			end,
-			done = function()
-				local elevator = workspace:FindFirstChild("Elevator")
-				return elevator ~= nil and (elevator:GetAttribute("Level") or 0) >= 1
-			end,
-		},
-		{
-			id = "scavenge",
-			text = "Find something worth keeping",
-			-- Elevator.server tags each floor's item.
-			target = function()
-				for _, item in CollectionService:GetTagged("ScavengeItem") do
-					if item.Transparency == 0 then
-						return item
-					end
-				end
-				return nil
-			end,
-			done = function()
-				return carryingScavenged() or liftAttribute("CargoValue") > 0 or liftAttribute("SendSeq") > 0
-			end,
-		},
-		{
-			id = "load",
-			text = "Load it onto the cargo lift",
-			target = function()
-				return elevatorChild("CargoLift", "Car")
-			end,
-			done = function()
-				return liftAttribute("CargoValue") > 0 or liftAttribute("SendSeq") > 0
-			end,
-		},
-		{
-			id = "send",
-			text = "Send the lift up to the shop",
-			target = function()
-				return elevatorChild("CargoLift", "SendButton")
-			end,
-			done = function()
-				return liftAttribute("SendSeq") > 0
-			end,
-		},
-	},
-	-- DayNightService sets this phase from dawn to dusk, while the shop is open.
-	Day = {
-		{
-			id = "take",
-			text = "Take an item from the racks",
-			done = holdingShopItem,
-			target = function()
-				return CollectionService:GetTagged("RackItem")[1]
-			end,
-		},
-		{
-			id = "stock",
-			text = "Stock the shelves and cases",
-			done = shopStocked,
-			target = function()
-				for _, model in CollectionService:GetTagged("StockFurniture") do
-					if (model:GetAttribute("FreeSlots") or 0) > 0 then
-						return model
-					end
-				end
-				return nil
-			end,
-		},
-	},
-}
-
-local taskPhase
-local doneSet = {}
-
--- Latches finished tasks and returns the phase's task list plus the first
--- unfinished one. Runs from the marker loop, so ticks don't depend on the book
--- being open.
-local function evaluateTasks()
-	local phase = workspace:GetAttribute("Phase") or DEFAULT_PHASE
-	if phase ~= taskPhase then
-		taskPhase = phase
-		doneSet = {}
-	end
-	local list = TASKS[phase] or {}
-	local current
-	for _, task in list do
-		if not doneSet[task.id] and task.done() then
-			doneSet[task.id] = true
-		end
-		if not doneSet[task.id] and not current then
-			current = task
-		end
-	end
-	return list, current
-end
-
-local function tasksText()
-	local lines = {}
-	for _, task in (evaluateTasks()) do
-		-- Done lines get a red-inked X in the box and struck-through text. Plain ASCII,
-		-- since the handwriting font has no glyph for the crossed-box characters.
-		table.insert(
-			lines,
-			doneSet[task.id] and `[<font color="{CHECK_INK}"><b>X</b></font>]  <s>{task.text}</s>`
-				or `[  ]  {task.text}`
-		)
-	end
-	return table.concat(lines, "\n\n")
-end
-
 -- ================= SECTIONS =================
 -- The bookmarks. Each section starts on a left-hand page so its tab can flip straight
 -- to it; a section with an odd number of pages gets a blank one to keep the next
@@ -275,26 +117,37 @@ player:GetAttributeChangedSignal("Money"):Connect(function()
 	lastMoney = now
 end)
 
+-- Up to this many of the floor's items are listed, still-there ones first.
+local FLOOR_LINES = 7
+
 local function floorPage()
 	local elevator = workspace:FindFirstChild("Elevator")
 	local level = elevator and elevator:GetAttribute("Level") or 0
-	-- Elevator.server tags the one item on the floor you're standing on.
-	local item = level > 0 and CollectionService:GetTagged("ScavengeItem")[1]
-	if not item then
-		return "Floor", "Nothing to track yet.\n\nRide the elevator down and each floor's item is written here."
+	-- Elevator.server tags the items on the floor you're standing on.
+	local items = level > 0 and CollectionService:GetTagged("ScavengeItem") or {}
+	if #items == 0 then
+		return "Floor", "Nothing to track yet.\n\nRide the elevator down and each floor's finds are written here."
 	end
-	local status
-	if carryingScavenged() then
-		status = "In your hands"
-	elseif liftAttribute("CargoValue") > 0 then
-		status = "On the cargo lift"
-	elseif item.Transparency == 0 then
-		status = "Still lying where it fell"
-	else
-		status = "Sent up to the shop"
+	local left, gone = {}, {}
+	for _, item in items do
+		local prompt = item:FindFirstChild("TakePrompt")
+		table.insert(prompt and prompt.Enabled and left or gone, item)
 	end
+	local lines = {}
+	for _, item in left do
+		table.insert(lines, `<b>{item.Name}</b>  ${item:GetAttribute("Value") or 0}`)
+	end
+	for _, item in gone do
+		table.insert(lines, `<s>{item.Name}</s>  <font color="{CHECK_INK}">taken</font>`)
+	end
+	while #lines > FLOOR_LINES do
+		table.remove(lines)
+	end
+	local status = carryingScavenged() and "Something in your hands"
+		or liftAttribute("CargoValue") > 0 and "Something on the cargo lift"
+		or `{#left} still lying about`
 	return `Floor {level}`,
-		`<b>{item.Name}</b>\n\nWorth ${item:GetAttribute("Value") or 0}\n\n<font color="{CHECK_INK}">{status}</font>`
+		`<font size="20">{table.concat(lines, "\n")}</font>\n\n<font color="{CHECK_INK}">{status}</font>`
 end
 
 local function liftPage()
@@ -563,7 +416,7 @@ local SECTIONS = {
 			},
 			{
 				render = function()
-					return "To do", tasksText()
+					return "To do", TutorialClient.todoText()
 				end,
 			},
 			{
@@ -636,107 +489,6 @@ local function sectionAt(spreadIndex)
 	end
 	return nil
 end
-
--- ================= WORLD MARKERS =================
--- A gold arrow bobbing over an object, with a caption. Built on the client, so
--- each player sees their own. The arrow rides a looping tween; the caption stays put.
-local function makeMarker(name, captionText)
-	local marker = Instance.new("BillboardGui")
-	marker.Name = name
-	marker.Size = UDim2.fromOffset(160, 80)
-	marker.AlwaysOnTop = true
-	marker.MaxDistance = 80
-	marker.ResetOnSpawn = false
-	marker.Enabled = false
-	marker.Parent = player:WaitForChild("PlayerGui")
-
-	local arrow = Instance.new("TextLabel")
-	arrow.Position = UDim2.fromOffset(0, 8)
-	arrow.Size = UDim2.new(1, 0, 0, 44)
-	arrow.BackgroundTransparency = 1
-	arrow.Font = Enum.Font.GothamBold
-	arrow.Text = "▼"
-	arrow.TextSize = 40
-	arrow.TextColor3 = Color3.fromRGB(226, 184, 96)
-	arrow.TextStrokeTransparency = 0.4
-	arrow.Parent = marker
-
-	local caption = Instance.new("TextLabel")
-	caption.Name = "Caption"
-	caption.Position = UDim2.fromOffset(0, 46)
-	caption.Size = UDim2.new(1, 0, 0, 22)
-	caption.BackgroundTransparency = 1
-	caption.Font = Enum.Font.GothamBold
-	caption.Text = captionText
-	caption.TextSize = 14
-	caption.TextColor3 = Color3.fromRGB(240, 226, 196)
-	caption.TextStrokeTransparency = 0.4
-	caption.Parent = marker
-
-	local tween = TweenService:Create(
-		arrow,
-		TweenInfo.new(0.6, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut, -1, true),
-		{ Position = UDim2.fromOffset(0, -6) }
-	)
-	tween:Play()
-	return marker, tween
-end
-
--- Points at the current task's target. Hidden until the journal is taken (the
--- pickup arrow covers that), and while the book is open. The billboard hangs from an
--- invisible part that glides toward the top of the target every frame, so a target
--- that moves (the floor selector rising out of the floor) or changes (the next step)
--- never makes the arrow jump.
-local MARKER_FOLLOW_RATE = 9
-task.spawn(function()
-	local marker = makeMarker("TaskMarker", "")
-	local anchor = Instance.new("Part")
-	anchor.Name = "TaskMarkerAnchor"
-	anchor.Anchored = true
-	anchor.CanCollide = false
-	anchor.CanQuery = false
-	anchor.CanTouch = false
-	anchor.Transparency = 1
-	anchor.Size = Vector3.one
-	anchor.Parent = workspace.CurrentCamera
-	marker.Adornee = anchor
-
-	local target, shown = nil, false
-	local function goalOf()
-		-- Targets are parts or models; the arrow floats a little above the top.
-		if target:IsA("Model") then
-			local cf, size = target:GetBoundingBox()
-			return cf.Position + Vector3.new(0, size.Y / 2 + 2, 0)
-		end
-		return target.Position + Vector3.new(0, target.Size.Y / 2 + 2, 0)
-	end
-
-	RunService.Heartbeat:Connect(function(dt)
-		if not target or not target.Parent then
-			return
-		end
-		local goal = goalOf()
-		-- First appearance snaps; after that it glides.
-		anchor.Position = shown and anchor.Position:Lerp(goal, 1 - math.exp(-MARKER_FOLLOW_RATE * dt)) or goal
-		shown = true
-	end)
-
-	while true do
-		local _, current = evaluateTasks()
-		local candidate = current and current.target and current.target()
-		local show = basePartOf(candidate) ~= nil
-			and player:GetAttribute("HasJournal") == true
-			and not player:GetAttribute("ReadingJournal")
-		target = show and candidate or nil
-		if show then
-			marker.Caption.Text = current.text
-		else
-			shown = false
-		end
-		marker.Enabled = show
-		task.wait(0.25)
-	end
-end)
 
 -- ================= BOOK MODEL =================
 local function part(parent, name, size, color, material)
@@ -1389,26 +1141,12 @@ workspace:GetAttributeChangedSignal("DayNumber"):Connect(function()
 end)
 
 -- ================= PICKUP =================
--- Everyone takes their own copy, so once you have yours the lobby book disappears for you only.
-local markerTween
-
-local function removeMarker()
-	if markerTween then
-		markerTween:Cancel()
-		markerTween = nil
-	end
-	local playerGui = player:FindFirstChildOfClass("PlayerGui")
-	local marker = playerGui and playerGui:FindFirstChild("JournalMarker")
-	if marker then
-		marker:Destroy()
-	end
-end
-
-local function hideLobbyBook()
-	removeMarker()
-	local stand = workspace:FindFirstChild("JournalStand")
-	local lobbyBook = stand and stand:FindFirstChild("Journal")
-	if not lobbyBook then
+-- Everyone takes their own copy, so once you have yours the stand's book disappears for you
+-- only. The store (and the stand with it) is put away while the elevator is down and comes
+-- back as fresh copies, so it's hidden again every time it turns up.
+local function hideLobbyBook(stand)
+	local lobbyBook = stand:FindFirstChild("Journal")
+	if not lobbyBook or not player:GetAttribute("HasJournal") then
 		return
 	end
 	for _, d in lobbyBook:GetDescendants() do
@@ -1420,34 +1158,27 @@ local function hideLobbyBook()
 	end
 end
 
-local function onHasJournal()
+local function hideAll()
+	for _, stand in CollectionService:GetTagged("JournalStand") do
+		hideLobbyBook(stand)
+	end
+end
+CollectionService:GetInstanceAddedSignal("JournalStand"):Connect(function(stand)
+	-- Its parts may still be arriving.
+	stand:WaitForChild("Journal"):WaitForChild("Cover")
+	hideLobbyBook(stand)
+end)
+
+player:GetAttributeChangedSignal("HasJournal"):Connect(function()
 	if not player:GetAttribute("HasJournal") then
 		return
 	end
-	hideLobbyBook()
+	hideAll()
 	showHint("Press G to read your journal", true)
 	task.delay(4, function()
 		if state == "closed" then
 			showHint(nil, false)
 		end
 	end)
-end
-player:GetAttributeChangedSignal("HasJournal"):Connect(onHasJournal)
-if player:GetAttribute("HasJournal") then
-	hideLobbyBook()
-end
-
--- The marker above the lobby book (see makeMarker), so it's obvious
--- what to walk up to. The stand is built by the server and may stream in late.
-task.spawn(function()
-	local stand = workspace:WaitForChild("JournalStand")
-	local cover = stand:WaitForChild("Journal"):WaitForChild("Cover")
-	if player:GetAttribute("HasJournal") then
-		return
-	end
-	local marker, tween = makeMarker("JournalMarker", "Take the journal")
-	marker.Adornee = cover
-	marker.StudsOffsetWorldSpace = Vector3.new(0, 2.2, 0)
-	marker.Enabled = true
-	markerTween = tween
 end)
+hideAll()

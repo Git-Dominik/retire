@@ -1,17 +1,20 @@
 -- Builds the plain room that sits outside the elevator doors on each floor.
 -- The elevator itself never moves: the room is swapped while the doors are shut.
 -- Rooms butt straight onto the elevator's front facade, which serves as their fourth wall.
--- Each floor holds one scavenge item, a random pick from ReplicatedStorage.StockItems
--- (definitions and prices in Shared.StockItems). It carries Value and ItemId attributes.
+-- Each floor holds several scavenge items, each a random pick from
+-- ReplicatedStorage.StockItems (definitions and prices in Shared.StockItems), carrying
+-- Value and ItemId attributes. The plain rooms put them on tables and the floor; floor 1's
+-- generator gives one surface and leaves its other loot spots as LootSpawn markers, of
+-- which up to EXTRA_LOOT get an item too.
 -- Floor 2's back wall has a hole with a shop built into it: ServerStorage.WallShop, a
 -- place-only template pivoted at the bottom centre of its opening on the wall's room
 -- face, front on LookVector. Its OpeningSize attribute (Vector2) is the hole cut here.
 --
 -- Large items (StockItems size "Large", up to 2 x 2) never land on the regular 1 x 1 item
--- spot. They spawn on LargeItemSpawn points instead: BaseParts tagged LargeItemSpawn
+-- spots. They spawn on LargeItemSpawn points instead: BaseParts tagged LargeItemSpawn
 -- anywhere in a built room (inside a template that gets cloned in, like WallShop), whose
 -- top face is the surface the item rests on. When a room has any, LARGE_ITEM_CHANCE of
--- the time the floor's one item is a large one on a random point instead of the usual.
+-- the time one large item is added on a random point.
 
 local CollectionService = game:GetService("CollectionService")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -64,6 +67,9 @@ local LAMP_COLOR = Color3.fromRGB(255, 196, 140)
 local WALL_SHOP_LEVEL = 2
 
 local LARGE_ITEM_CHANCE = 0.4
+
+-- Extra items on floor 1's leftover LootSpawn markers, on top of its main item.
+local EXTRA_LOOT = 5
 
 local function part(parent, name, size, cframe, color, material)
 	local p = Instance.new("Part")
@@ -212,20 +218,44 @@ function Levels.placeItem(parent, id, surface)
 	return itemDef and placeItem(parent, itemDef, surface, Random.new())
 end
 
+-- A fresh small item on each surface; the layout is fixed per floor, the items are drawn
+-- anew every visit.
+local function placeLoot(room, surfaces)
+	local items = {}
+	for _, surface in surfaces do
+		local itemDef = pickItem(Random.new(), "Small")
+		if itemDef then
+			table.insert(items, placeItem(room, itemDef, surface, Random.new()))
+		end
+	end
+	return items
+end
+
 -- base: floor-level CFrame at the centre of the elevator's outer door face, facing into the room.
--- Returns the room model, the item part to be carried back, and the item's name.
+-- Returns the room model and the item parts that can be carried back.
 local function buildRoom(level, base)
 	local rng = Random.new(level)
 	local palette = PALETTES[(level - 1) % #PALETTES + 1]
-	-- The room's layout is fixed per floor, but the item is a fresh draw every visit.
-	local itemDef = pickItem(Random.new(), "Small")
 
-	-- Floor 1 is procedurally generated; the generator picks where the item goes.
+	-- Floor 1 is procedurally generated; the generator picks where the main item goes and
+	-- marks its other loot spots (see the header).
 	if level == 1 then
 		local generator = FoundryLevel or FactoryLevel
 		local okBuild, room, surface = pcall(generator.build, base)
 		if okBuild then
-			return room, placeItem(room, itemDef, surface, rng), itemDef.name
+			local surfaces = { surface }
+			local spawns = {}
+			for _, d in room:GetDescendants() do
+				if d:IsA("BasePart") and CollectionService:HasTag(d, "LootSpawn") then
+					table.insert(spawns, d)
+				end
+			end
+			for _ = 1, math.min(EXTRA_LOOT, #spawns) do
+				local marker = table.remove(spawns, math.random(1, #spawns))
+				-- Markers are 1-stud cubes resting on their spot.
+				table.insert(surfaces, marker.CFrame * CFrame.new(0, -marker.Size.Y / 2, 0))
+			end
+			return room, placeLoot(room, surfaces)
 		end
 		warn(`[Levels] level 1 generator failed, using a plain room: {room}`)
 	end
@@ -277,28 +307,37 @@ local function buildRoom(level, base)
 	makeLamp(room, at(0, HEIGHT, DEPTH * 0.3))
 	makeLamp(room, at(0, HEIGHT, DEPTH * 0.75))
 
-	-- Item table goes in one of the far corners or against a side wall.
+	-- Furniture goes in the far corners and against the side walls: a table and chair, a
+	-- cabinet, and side tables in the rest. Everything but the cabinet holds an item, and
+	-- one more lies on the floor somewhere near the walls.
 	local spots = {
 		{ x = -WIDTH / 2 + 3, z = DEPTH - 3 },
 		{ x = WIDTH / 2 - 3, z = DEPTH - 3 },
 		{ x = -WIDTH / 2 + 3, z = DEPTH * 0.5 },
 		{ x = WIDTH / 2 - 3, z = DEPTH * 0.5 },
 	}
+	local surfaces = {}
 	local spot = table.remove(spots, rng:NextInteger(1, #spots))
-	local top = makeTable(room, at(spot.x, 0, spot.z), Vector2.new(3, 3), palette.trim)
+	table.insert(surfaces, makeTable(room, at(spot.x, 0, spot.z), Vector2.new(3, 3), palette.trim))
 	makeChair(room, at(spot.x + (spot.x < 0 and 2.6 or -2.6), 0, spot.z) * CFrame.Angles(0, math.pi / 2 * (spot.x < 0 and 1 or -1), 0), palette.trim)
 
-	-- A cabinet in one of the remaining spots so the room isn't bare.
-	local other = spots[rng:NextInteger(1, #spots)]
+	local other = table.remove(spots, rng:NextInteger(1, #spots))
 	part(room, "Cabinet", Vector3.new(3, 6, 1.6), at(other.x, 3, other.z) * CFrame.Angles(0, math.pi / 2, 0), palette.trim, Enum.Material.Wood)
 
-	return room, placeItem(room, itemDef, top, rng), itemDef.name
+	for _, side in spots do
+		table.insert(surfaces, makeTable(room, at(side.x, 0, side.z), Vector2.new(2, 2), palette.trim))
+	end
+	-- Down the room's length, clear of the rug, the doors and the furniture spots.
+	local floorX = (rng:NextNumber() < 0.5 and -1 or 1) * (WIDTH / 2 - 2)
+	table.insert(surfaces, at(floorX, 0, rng:NextNumber(DEPTH * 0.2, DEPTH * 0.35)))
+
+	return room, placeLoot(room, surfaces)
 end
 
--- Builds the room, then sometimes swaps its item for a large one on a LargeItemSpawn point
--- (see the header).
+-- Builds the room, then sometimes adds a large item on a LargeItemSpawn point (see the
+-- header). Returns the room and its item parts.
 function Levels.build(level, base)
-	local room, item, name = buildRoom(level, base)
+	local room, items = buildRoom(level, base)
 	local points = {}
 	for _, d in room:GetDescendants() do
 		if d:IsA("BasePart") and CollectionService:HasTag(d, "LargeItemSpawn") then
@@ -306,13 +345,12 @@ function Levels.build(level, base)
 		end
 	end
 	local large = #points > 0 and math.random() < LARGE_ITEM_CHANCE and pickItem(Random.new(), "Large")
-	if not large then
-		return room, item, name
+	if large then
+		local point = points[math.random(1, #points)]
+		local surface = point.CFrame * CFrame.new(0, point.Size.Y / 2, 0)
+		table.insert(items, placeItem(room, large, surface, Random.new()))
 	end
-	local point = points[math.random(1, #points)]
-	local surface = point.CFrame * CFrame.new(0, point.Size.Y / 2, 0)
-	item:Destroy()
-	return room, placeItem(room, large, surface, Random.new()), large.name
+	return room, items
 end
 
 return Levels

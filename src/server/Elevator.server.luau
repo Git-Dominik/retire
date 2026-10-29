@@ -5,7 +5,7 @@
 -- doors shut -> the room outside is swapped during a short "ride" -> doors open on the
 -- chosen floor. "STORE" on the selector brings the elevator back up to the lobby.
 -- Scavenged items go home through the cargo lift (Cargo.server).
--- Each floor's item carries the ScavengeItem tag.
+-- Every item on a floor carries the ScavengeItem tag.
 -- During a ride the Elevator model carries RideDir (1 going down, -1 going up, 0 when
 -- still), RideStart (server time) and RideTime; ElevatorShaft.client runs the shaft
 -- wall past the doorway from those.
@@ -17,6 +17,7 @@ local ServerStorage = game:GetService("ServerStorage")
 local TweenService = game:GetService("TweenService")
 
 local Levels = require(script.Parent.Levels)
+local Noise = require(script.Parent.Noise)
 
 local MUSIC_ID = "rbxassetid://9042688121" -- "Waltz From The Past" (APM, solo cello)
 local HUM_ID = "rbxassetid://9112797280" -- "Industrial Presence 2" (Pro Sound Effects)
@@ -277,7 +278,7 @@ end
 -- ================= FLOORS =================
 local level = 0
 local descending = false
-local room, roomItem, roomItemName
+local room
 
 elevator:SetAttribute("Level", level)
 
@@ -308,6 +309,7 @@ local function makeSelectorPrompt(parent, action, hold)
 	prompt.HoldDuration = hold
 	prompt.MaxActivationDistance = 6
 	prompt.RequiresLineOfSight = false
+	prompt:SetAttribute("IgnoreSight", true) -- the pedestal's own parts would block sight
 	prompt.Parent = parent
 	return prompt
 end
@@ -408,6 +410,7 @@ if callPanel then
 	callPrompt.ObjectText = "Elevator"
 	callPrompt.KeyboardKeyCode = Enum.KeyCode.E
 	callPrompt.RequiresLineOfSight = false
+	callPrompt:SetAttribute("IgnoreSight", true) -- the button ring sits in front of the plate
 
 	-- A short metal click from the button itself, every time it's pressed.
 	local pressSound = makeSound(callPanel["Call Plate"], "ButtonPress", "rbxassetid://9120097918", {
@@ -486,6 +489,7 @@ local function giveItem(player, item, itemName)
 
 	tool.Parent = player.Backpack
 	humanoid:EquipTool(tool)
+	Noise.pickup(player)
 end
 
 local function clearLevel()
@@ -523,8 +527,11 @@ local function makeTakeable(item, itemName)
 end
 
 local function buildLevel()
-	room, roomItem, roomItemName = Levels.build(level, roomBase)
-	makeTakeable(roomItem, roomItemName)
+	local items
+	room, items = Levels.build(level, roomBase)
+	for _, item in items do
+		makeTakeable(item, item.Name)
+	end
 
 	room.Parent = workspace
 end

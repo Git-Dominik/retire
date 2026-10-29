@@ -11,9 +11,10 @@ local player = Players.LocalPlayer
 local playerGui = player:WaitForChild("PlayerGui")
 local camera = workspace.CurrentCamera
 
-local WALK_SPEED = 10.2
-local SPRINT_SPEED = 18.5
-local CROUCH_SPEED = 5.6
+local Movement = require(ReplicatedStorage:WaitForChild("Shared"):WaitForChild("MovementConfig"))
+local WALK_SPEED = Movement.WALK_SPEED
+local SPRINT_SPEED = Movement.SPRINT_SPEED
+local CROUCH_SPEED = Movement.CROUCH_SPEED
 local BASE_FOV = 72
 -- How fast the view catches up to the mouse. Lower trails further behind;
 -- around 30+ feels close to the raw default camera.
@@ -22,8 +23,29 @@ local LOOK_SMOOTHING = 10
 local MAX_LOOK_LAG = 15
 -- Degrees of roll per degree the view trails the mouse; turning left leans right.
 local TURN_LEAN = 0.1
--- Studs the camera pushes forward while sprinting, easing back after you stop.
-local SPRINT_FORWARD = 1.5
+-- Studs the eye moves forward looking straight down (less the shallower you
+-- look), as the head tips over the chest, so you see your own body and feet
+-- (Arms.client shows them). Never further than a wall in front allows. While
+-- holding something it eases back to HELD_LOOK_DOWN_FORWARD, or the eye would
+-- pass the held item.
+local LOOK_DOWN_FORWARD = 2
+local HELD_LOOK_DOWN_FORWARD = 0.6
+-- The head turns first: standing still, the view can turn this many degrees
+-- from the body before the body follows; walking, the body follows straight
+-- away. BODY_TURN_RATE is how quickly it catches up.
+local HEAD_TURN_FREE = 25
+local BODY_TURN_RATE = 8
+-- Field of view: widened with how fast you're actually moving (most of it
+-- from sprinting), narrowed crouching, and breathing in and out while
+-- exhausted. FOV_RATE is how quickly it follows.
+local WALK_FOV = 2
+local SPRINT_FOV = 12
+local CROUCH_FOV = -4
+local EXHAUSTED_FOV = 1.5
+local FOV_RATE = 4
+-- Humanoids climb anything with ledges, shelving included, so climbing is off
+-- except within this many studs of a ladder (a TrussPart).
+local LADDER_REACH = 1.5
 -- Pitch the view is pulled to while reading the journal, in degrees.
 local READ_PITCH = -46
 
@@ -78,6 +100,8 @@ staminaBg.BackgroundTransparency = 0.55
 staminaBg.BorderSizePixel = 0
 staminaBg.ZIndex = 4
 staminaBg.Parent = gui
+-- Replaced by the HUD script's stamina bar; kept only so the code below still runs.
+staminaBg.Visible = false
 local sbCorner = Instance.new("UICorner")
 sbCorner.CornerRadius = UDim.new(0, 4)
 sbCorner.Parent = staminaBg
@@ -109,7 +133,7 @@ local DROP_KEY = Enum.KeyCode.Backspace
 local binds = Instance.new("TextLabel")
 binds.Name = "Binds"
 binds.AnchorPoint = Vector2.new(0.5, 1)
-binds.Position = UDim2.new(0.5, 0, 1, -58)
+binds.Position = UDim2.new(0.5, 0, 1, -124)
 binds.Size = UDim2.fromOffset(560, 24)
 binds.BackgroundTransparency = 1
 binds.Font = Enum.Font.GothamBold
@@ -440,11 +464,17 @@ if not touch then
 	workspace.DescendantAdded:Connect(useCustomStyle)
 end
 
--- Every prompt needs a clear view, so none can be used through a wall. Set here
--- rather than per script because many prompts are made in Studio or in other
--- scripts that spell it out as false.
+-- Prompts in the staff area can't be used through a wall. Scoped to that area because
+-- every other prompt (the elevator car, bell, cargo lift, floor items, shop racks) is
+-- placed by a script that sets RequiresLineOfSight = false on purpose, and forcing it on
+-- hid them behind their own trim. IgnoreSight exempts a single prompt inside the area.
 local function requireSight(d)
-	if d:IsA("ProximityPrompt") then
+	if not d:IsA("ProximityPrompt") or d:GetAttribute("IgnoreSight") then
+		return
+	end
+	local store = workspace:FindFirstChild("Grocery Store")
+	local staff = store and store:FindFirstChild("Employee Area")
+	if staff and d:IsDescendantOf(staff) then
 		d.RequiresLineOfSight = true
 	end
 end
@@ -461,10 +491,8 @@ local staminaDelay = 0
 local exhausted = false
 local sprintHeld = false
 local crouchHeld = false
-local bobPhase = 0
--- Eased toward the movement state so bob and shake fade in and out instead
--- of popping when you start, stop or begin sprinting.
-local bobAmount = 0
+-- Eased toward the movement state so shake fades in and out instead of
+-- popping when you begin sprinting.
 local shakeAmount = 0
 local rumbleAmount = 0
 local readBlend = 0
@@ -480,9 +508,15 @@ local targetYaw
 local smoothYaw
 local smoothPitch
 local fov = BASE_FOV
-local sprintForward = 0
+local headTip = 0
 local sprinting = false
 local moving = false
+local canClimb = false
+local worldParams = RaycastParams.new()
+worldParams.FilterType = Enum.RaycastFilterType.Exclude
+worldParams.RespectCanCollide = true
+local ladderParams = OverlapParams.new()
+ladderParams.FilterType = Enum.RaycastFilterType.Exclude
 -- Kept separately because the transparencies it drives use different ranges,
 -- so it can't be read back from any one of them.
 local hudFade = 0
@@ -495,19 +529,23 @@ local function onCharacterAdded(char)
 	humanoid.JumpHeight = 0
 	humanoid.WalkSpeed = WALK_SPEED
 	humanoid.CameraOffset = Vector3.new(0, 0, 0)
+	-- The body is turned by hand after the view (HotelCameraFX), so the head leads.
+	humanoid.AutoRotate = false
 	humanoid:SetStateEnabled(Enum.HumanoidStateType.Jumping, false)
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, false)
+	canClimb = false
+	worldParams.FilterDescendantsInstances = { char }
+	ladderParams.FilterDescendantsInstances = { char }
 	stamina = 100
 	staminaDelay = 0
 	exhausted = false
 	crouchOffset = 0
-	bobPhase = 0
-	bobAmount = 0
 	shakeAmount = 0
 	roll = 0
 	targetCFrame = nil
 	targetYaw = nil
 	fov = BASE_FOV
-	sprintForward = 0
+	headTip = 0
 	sprinting = false
 	player.CameraMode = Enum.CameraMode.LockFirstPerson
 	camera.FieldOfView = BASE_FOV
@@ -632,21 +670,60 @@ RunService.RenderStepped:Connect(function(dt)
 		sprintHeld = false
 	end
 
-	local speedFactor = moving and (sprinting and 1.5 or (crouchHeld and 0.55 or 1)) or 0
-	bobAmount += (speedFactor - bobAmount) * math.min(dt * 6, 1)
-	bobPhase += dt * (sprinting and 12.5 or 9) * (moving and 1 or 0)
-	local bobY = math.sin(bobPhase * 2) * 0.055 * bobAmount
-	local bobX = math.cos(bobPhase) * 0.045 * bobAmount
-	local breath = math.sin(os.clock() * 1.25) * 0.009
 	local targetCrouch = crouchHeld and -1.55 or 0
 	crouchOffset += (targetCrouch - crouchOffset) * math.min(dt * 8, 1)
 	-- Arms.client lowers whatever you're holding by the same amount.
 	player:SetAttribute("CrouchOffset", crouchOffset)
-	sprintForward += ((sprinting and SPRINT_FORWARD or 0) - sprintForward) * math.min(dt * 4, 1)
-	humanoid.CameraOffset = Vector3.new(bobX, bobY + breath + crouchOffset, -sprintForward)
+	-- The eye sits still whatever you do (no bob or sprint push); only crouching
+	-- and looking down move it. It tips forward along the view, which can be
+	-- turned from the body (CameraOffset is in the body's space).
+	local root = humanoid.RootPart
+	local holding = character:FindFirstChildOfClass("Tool")
+	local tipMax = holding and HELD_LOOK_DOWN_FORWARD or LOOK_DOWN_FORWARD
+	local tipGoal = smoothPitch and tipMax * math.max(-math.sin(smoothPitch), 0) or 0
+	local forward = smoothYaw and Vector3.new(-math.sin(smoothYaw), 0, -math.cos(smoothYaw))
+	if root and forward and tipGoal > 0 then
+		local eye = root.CFrame:PointToWorldSpace(Vector3.new(0, 1.5 + crouchOffset, 0))
+		local hit = workspace:Raycast(eye, forward * (tipGoal + 0.3), worldParams)
+		if hit then
+			tipGoal = math.max(hit.Distance - 0.3, 0)
+		end
+	end
+	-- Pulled in at once at a wall, eased otherwise (picking up an item).
+	if tipGoal < headTip - 0.05 then
+		headTip = tipGoal
+	else
+		headTip += (tipGoal - headTip) * math.min(dt * 6, 1)
+	end
+	local tip = Vector3.zero
+	if root and forward then
+		tip = root.CFrame:VectorToObjectSpace(forward * headTip)
+	end
+	humanoid.CameraOffset = Vector3.new(tip.X, crouchOffset, tip.Z)
 
-	local targetFov = BASE_FOV + (sprinting and 7 or 0) + (crouchHeld and -3 or 0) + (exhausted and 1.5 or 0)
-	fov += (targetFov - fov) * math.min(dt * 6, 1)
+	if root then
+		local nearLadder = false
+		for _, part in workspace:GetPartBoundsInRadius(root.Position, LADDER_REACH, ladderParams) do
+			if part:IsA("TrussPart") then
+				nearLadder = true
+				break
+			end
+		end
+		if nearLadder ~= canClimb then
+			canClimb = nearLadder
+			humanoid:SetStateEnabled(Enum.HumanoidStateType.Climbing, nearLadder)
+		end
+	end
+
+	local speed = root and (root.AssemblyLinearVelocity * Vector3.new(1, 0, 1)).Magnitude or 0
+	local walkFrac = math.clamp(speed / WALK_SPEED, 0, 1)
+	local sprintFrac = math.clamp((speed - WALK_SPEED) / (SPRINT_SPEED - WALK_SPEED), 0, 1)
+	local targetFov = BASE_FOV
+		+ WALK_FOV * walkFrac
+		+ SPRINT_FOV * sprintFrac * sprintFrac * (3 - 2 * sprintFrac)
+		+ (crouchHeld and CROUCH_FOV or 0)
+		+ (exhausted and EXHAUSTED_FOV * (1 + math.sin(os.clock() * 3)) / 2 or 0)
+	fov += (targetFov - fov) * (1 - math.exp(-FOV_RATE * dt))
 	camera.FieldOfView = fov
 
 	local frac = stamina / 100
@@ -657,6 +734,12 @@ RunService.RenderStepped:Connect(function(dt)
 	staminaBg.BackgroundTransparency = 0.55 + 0.42 * hudFade
 	staminaFill.BackgroundTransparency = 0.12 + 0.7 * hudFade
 	sbStroke.Transparency = 0.55 + 0.45 * hudFade
+	-- The HUD script draws the stamina bar and crouch indicator from these.
+	player:SetAttribute("Stamina", math.floor(stamina * 10 + 0.5) / 10)
+	player:SetAttribute("StaminaFade", math.floor(hudFade * 100 + 0.5) / 100)
+	player:SetAttribute("Exhausted", exhausted)
+	player:SetAttribute("Crouching", crouchHeld)
+	player:SetAttribute("Sprinting", sprinting)
 	dot.BackgroundTransparency = 0.55 + 0.35 * hudFade
 	dot.Visible = not player:GetAttribute("ReadingJournal")
 
@@ -732,6 +815,20 @@ RunService:BindToRenderStep("HotelCameraFX", Enum.RenderPriority.Camera.Value + 
 	end
 	local smoothRotation = CFrame.fromEulerAnglesYXZ(smoothPitch, smoothYaw, 0)
 
+	-- The head leads: the body turns after the view, once it's turned further
+	-- than HEAD_TURN_FREE (straight away while walking).
+	local root = humanoid.RootPart
+	if root and not root.Anchored and not humanoid.Sit then
+		local _, bodyYaw = root.CFrame:ToEulerAnglesYXZ()
+		local diff = (smoothYaw - bodyYaw + math.pi) % (2 * math.pi) - math.pi
+		local free = moving and 0 or math.rad(HEAD_TURN_FREE)
+		local excess = math.sign(diff) * math.max(math.abs(diff) - free, 0)
+		if math.abs(excess) > 1e-3 then
+			bodyYaw += excess * (1 - math.exp(-BODY_TURN_RATE * dt))
+			root.CFrame = CFrame.new(root.Position) * CFrame.Angles(0, bodyYaw, 0)
+		end
+	end
+
 	local lateral = humanoid.MoveDirection:Dot(targetCFrame.RightVector)
 	local targetRoll = -lateral * (sprinting and 2.0 or (crouchHeld and 0.7 or 1.1))
 	roll += (targetRoll - roll) * math.min(dt * 6, 1)
@@ -746,7 +843,10 @@ RunService:BindToRenderStep("HotelCameraFX", Enum.RenderPriority.Camera.Value + 
 	local rumbleRoll = math.noise(t * 7, 8.7) * 0.42 * rumbleAmount
 	local rumbleY = math.noise(t * 11, 5.3) * 0.075 * rumbleAmount
 	local turnLean = -math.deg(targetYaw - smoothYaw) * TURN_LEAN
-	camera.CFrame = CFrame.new(targetCFrame.Position + Vector3.new(0, rumbleY, 0))
+	-- The eye sits on the focus. The default first-person camera hangs half a stud
+	-- behind it along the view, which swings it back into the neck (and through the
+	-- wall behind you) when looking up.
+	camera.CFrame = CFrame.new(camera.Focus.Position + Vector3.new(0, rumbleY, 0))
 		* smoothRotation
 		* CFrame.Angles(math.rad(shake + rumblePitch), 0, math.rad(roll + turnLean + rumbleRoll))
 end)
