@@ -1,8 +1,8 @@
 # Doors Asset Style Guide
 
-**GUIDE VERSION: v18**
+**GUIDE VERSION: v20**
 **Audience:** Claude, working in Blender through MCP. **Purpose:** a universal method for making NEW, original props, furniture, fixtures and set pieces for a Roblox game in the "Doors" art style, for ANY object type. This guide teaches how to build any object (the method and a grammar of part types). It contains no recipes for specific objects; worked examples live in `examples/EXAMPLES.md`.
-**Newest rules:** (1) parts are CRISP by default and only one declared focal part may be soft (Sec. 4.2); (2) curves are built from straight, chunky facets with visible joints, never from softening (Sec. 4.3); (3) hand-made parts get a controlled wonky irregularity (Sec. 4.4); (4) bars, arms, hooks, handles and rings have a HEXAGONAL cross-section (Sec. 4.5); (5) tape, straps, bands and stripes are built to follow their host's surface and its single 45-degree chamfer, never as flat sheets lying on or hanging off it (Sec. 11, Wrap).
+**Newest rules (v20):** (C) edge treatment is DECIDED per part: thin stock (planks, rails, handrails) stays sharp, thick exposed solids (shelves, boxes, posts) get one chamfer, and seams between parts stay flat and sharp (Sec. 4.5); (A) every joint is built properly: bars run INTO their hosts, nothing floats, stops short, crosses through or pokes out (Sec. 11.1); (B) detail is planned, not skipped: every object has a hero part, a transition piece at every joint and an operating detail (Sec. 11.2). Earlier rules: (1) parts are CRISP by default and only one declared focal part may be soft (Sec. 4.2); (2) curves are built from straight, chunky facets with visible joints, never from softening (Sec. 4.3); (3) hand-made parts get a controlled wonky irregularity (Sec. 4.4); (4) bars, arms, hooks, handles and rings have a HEXAGONAL cross-section (Sec. 4.5); (5) tape, straps, bands and stripes are built to follow their host's surface and its single 45-degree chamfer, never as flat sheets lying on or hanging off it (Sec. 11, Wrap).
 **Confidence:** style traits come from direct observation of about 24 in-game screenshots; sizes, colors and the Roblox Material choices are estimates. Treat numbers as starting values. Verified and unverified facts live in `LEARNINGS.md`.
 
 ---
@@ -11,17 +11,17 @@
 
 **Read only this guide** and the files it names (`toolkit/`, `examples/`, and `LEARNINGS.md` or `references/` when a section says so). Ignore any other copies of the guide, earlier models, and earlier instructions. Build everything from scratch: no free, marketplace or Creator Store models.
 
-1. **Receipt.** Begin your FIRST reply with `Guide v18 read`. If you cannot state "v18", you are reading an old copy: stop and say so.
+1. **Receipt.** Begin your FIRST reply with `Guide v20 read`. If you cannot state "v20", you are reading an old copy: stop and say so.
 2. **Interpret.** For each requested object, say in one line how you interpret it. Use the most common, canonical form of the named object (the form most people picture first). If it is genuinely ambiguous, ask. If the user supplies reference images, use them only for detail level, shape language and finish (Sec. 3.3).
 3. **Spec first.** For each object output the Sec. 12 spec (including its `parts:` list), then **wait for approval** before building, unless the user said to build directly.
 4. **Build** with the toolkit (Sec. 14), part by part, using the part grammar (Sec. 11). Every part is CRISP unless you declare it soft (Sec. 4.2); hand-made parts follow Sec. 4.4. Report real triangle counts from `tk.stats()`.
 5. **Review** in the Sec. 8.2 rig (Material Preview, dark warm light), never in a gray Solid viewport. Zoom in on every plate, arm, joint, rim and holder and confirm the corners are hard and the curves are visibly faceted. **Double-check clipping:** orbit every object from at least 4 sides and from above, zoom in on every place two parts meet (strips on a host, arms on plates, candles in holders, lids on bodies, handles on bodies), and confirm nothing pokes through a surface or leaves a gap. Run `tk.audit_clipping` (Sec. 14) too.
-6. **Check:** run `tk.audit_mesh`, `tk.audit_clipping` and `tk.audit_style` (Sec. 4.2), then the Sec. 13 checklist, honestly, and list any failures.
+6. **Check:** run `tk.audit_mesh`, `tk.audit_connections`, `tk.audit_clipping` and `tk.audit_style` (Sec. 4.2, 11.1), then the Sec. 13 checklist, honestly, and list any failures.
 7. **Hand off** to Studio (Sec. 9.6): write the Luau script and manifest, and tell the user the export/import steps.
 
 **Rule precedence when rules conflict (highest first):**
 1. Hard constraints: Roblox-materials-only (Sec. 5), **crisp-by-default shading with a soft-part budget of one (Sec. 4.2)**, curves from facets (Sec. 4.3), technical limits (Sec. 9), single-segment chamfers on flat edges, true relative scale, no gore.
-2. Recognition features: the object must be nameable from its render (Sec. 3.2).
+2. Recognition features and structural joinery: the object must be nameable from its render (Sec. 3.2), and every part must be properly joined and capped (Sec. 11.1-11.2).
 3. Simplicity: remove ornament, keep forms chunky (Sec. 3.1).
 4. Character: the controlled wonk on hand-made parts (Sec. 4.4).
 5. Everything else (palette, finish, polish).
@@ -61,12 +61,13 @@ Use this for every object, including ones nobody has built before.
 2. **Find its recognition features** (Sec. 3.2): the 2-4 geometric features a person needs to name it. Method: imagine its gray silhouette from the front and from the side; what would you still recognise? Write them as `recognition_features`.
 3. **Size it by analogy** from the anchor table (Sec. 7). Keep true relative scale to its neighbours.
 4. **Break it into parts** and give every part a type from the part grammar (Sec. 11): plate, block, round body, bar, curved member, shell, dome, stepped base, hand-made part, organic mass, emitter, mark, contents, attachment. Write the list in the spec as `parts:`.
-5. **Decide the tier of every part** (Sec. 4.2): crisp (default), organic or hand-made wonky (Sec. 4.4), or soft. At most one soft focal part; decide it now, or none.
-6. **Split by material/color region.** One MeshPart holds one Roblox Material, and its color is a flat vertex color baked into the FBX, so every distinct region becomes its own mesh (tag). Group regions that belong to one recognition feature as one part group (Sec. 3.1 caps).
-7. **Assign a Roblox Material (set in Studio) and a vertex color (exported from Blender)** per region (Sec. 5), with 2-3 value steps and at most one accent.
-8. **Budget it** (Sec. 9.1). Under budget is correct. If over, cut ornament and facets, never recognition features.
-9. **Vary it** so it is not a copy of any reference or example: different proportions, feature layout, color family, wonk seed.
-10. **Build, review, check, hand off** (Sec. 0).
+5. **Plan the joints and the details** (Sec. 11.1-11.2): name the hero part, list every place two parts meet and what joins them (buried end, cap, collar, bracket), and pick one operating detail. Write it in the spec.
+6. **Decide the tier of every part** (Sec. 4.2): crisp (default), organic or hand-made wonky (Sec. 4.4), or soft. At most one soft focal part; decide it now, or none.
+7. **Split by material/color region.** One MeshPart holds one Roblox Material, and its color is a flat vertex color baked into the FBX, so every distinct region becomes its own mesh (tag). Group regions that belong to one recognition feature as one part group (Sec. 3.1 caps).
+8. **Assign a Roblox Material (set in Studio) and a vertex color (exported from Blender)** per region (Sec. 5), with 2-3 value steps and at most one accent.
+9. **Budget it** (Sec. 9.1). Under budget is correct. If over, cut ornament and facets, never recognition features.
+10. **Vary it** so it is not a copy of any reference or example: different proportions, feature layout, color family, wonk seed.
+11. **Build, review, check, hand off** (Sec. 0).
 
 ---
 
@@ -74,8 +75,8 @@ Use this for every object, including ones nobody has built before.
 
 ### 3.1 Simple, never featureless
 **Doors props are simple but not blank.** Remove ORNAMENT; never remove a recognition feature. Forms are clean, chunky and few-part, with large plain faces.
-- **Part caps** (a group of regions serving one recognition feature counts as one part): small dressing 1-3 parts, medium props 3-6, hero set-pieces 6-10. Roblox regions can push the mesh count to about 3-6 for one small object.
-- **Ornament is anything the object works without** and is banned: stitching, ribbons, corner caps, medallions, studs, rivets, engravings, filigree, tassels, individual hinges, trim bands, finials, gold trim. (Big chunky bolts on industrial metal are allowed.) Trim and molding are for architecture only (Sec. 4.8).
+- **Part counts (a minimum AND a maximum):** small props 5-10 parts, medium props 8-18, hero set-pieces 15-30 (a group of regions serving one feature counts as one part). Fewer than the minimum means the object is under-built (Sec. 3.4); more than the maximum means clutter.
+- **Ornament is banned; structural detail is required.** Ornament is decoration that explains nothing about how the object is built or used: stitching, ribbons, medallions, studs, filigree, engravings, tassels, finials, gold trim. **Structural detail shows how parts are held, joined, capped, hinged or operated: collars, brackets, sockets, caps, bosses, feet, braces, straps, big bolts, latches, hinges, step rings.** Remove ornament; never remove structural detail (Sec. 11.2). Trim and molding are for architecture only (Sec. 4.8).
 - **Leave large faces plain:** one flat vertex color on one built-in Material.
 - **Squint test:** the silhouette reads in about one second and you can describe the object in one short sentence.
 - **Reuse beats variety:** make 2-3 simple variants and vary scale, tilt or color.
@@ -101,15 +102,17 @@ For ANY object there are two ways to be wrong. Place your design between them.
 | Direction | Symptoms | Fix |
 |-----------|----------|-----|
 | **Over-detailed** | Stacked thin slabs, terraced profiles, ornament, many tiny parts, engraved or realistic surface detail, individually modeled leaves/bolts/tufts | Delete ornament; merge parts; keep recognition features only |
+| **Under-built** | Too few parts; the object is one bar and one blob; parts meet with no collar, cap, socket or bracket; no operating detail; plain faces everywhere | Run the Sec. 11.2 detail plan: hero part, a transition piece at every joint, one operating detail |
+| **Badly joined** | Bars float, stop short of their post, cross through each other and stick out, sit in the same space, or end as raw cut faces | Rebuild each joint per Sec. 11.1 (`tk.bar_between`) |
 | **Featureless** | A plain box, cone or sphere with a color; no part you can name | Add back the 2-4 recognition features as chunky low-relief parts |
 | **Softened** | Rounded corners, smooth tubes, many-sided cylinders, smooth shading, subdivision | Rebuild as facets; curves as chains of straight blocks (Sec. 4.3) |
 | **Machined-wonky mix-up** | Candles/clay/cloth perfectly regular, or plates/hardware randomly warped | Regular for machined parts, controlled wonk for hand-made parts (Sec. 4.4) |
 
 ### 3.5 Anti-patterns (reject on sight)
-Stepped or terraced domes and cylinders; ornamental extras; jewel-tone or metallic-gold colors; separate geometry for pure ornament; domes built as cones of hard panels; the wrong Roblox Material on a part (Wood on a metal dome); more than 4 color regions on one object; decorative contrasting rims that exist only for detail; no value contrast between parts; flowers, berries, fruit or nubs on plants unless the user asks; a straight thin pin trunk; a container whose contents are missing or a flat disc; unusual variants of the named object; **rounded or softened corners on plates, arms, trays, holders or candles; smooth round tubes and smooth cylinders for functional parts; arms bent with rounded or subdivided bends; smooth shading, Auto Smooth, Bevel, Subdivision or Weighted Normal on a crisp part; cylinders with more than 8 sides; shallow slopes (gentler than about 30 degrees) that read as a soft dome; hand-made parts that are perfectly regular or machined parts that are randomly warped; arms, hooks or handles with a square or octagonal section instead of a hexagon; tape, straps, bands or labels that are flat sheets floating above a surface, hang off an edge, ignore the host's chamfer or stand out as a separate slab.**
+Stepped or terraced domes and cylinders; ornamental extras; jewel-tone or metallic-gold colors; separate geometry for pure ornament; domes built as cones of hard panels; the wrong Roblox Material on a part (Wood on a metal dome); more than 4 color regions on one object; decorative contrasting rims that exist only for detail; no value contrast between parts; flowers, berries, fruit or nubs on plants unless the user asks; a straight thin pin trunk; a container whose contents are missing or a flat disc; unusual variants of the named object; **bars that float, stop short, cross through each other, poke out past a post or overlap in the same space; joints with no collar, cap, socket or bracket; a dome with lumps, noise or irregular rings (a soft part is a clean surface of revolution); rounded or softened corners on plates, arms, trays, holders or candles; smooth round tubes and smooth cylinders for functional parts; arms bent with rounded or subdivided bends; smooth shading, Auto Smooth, Bevel, Subdivision or Weighted Normal on a crisp part; cylinders with more than 8 sides; shallow slopes (gentler than about 30 degrees) that read as a soft dome; hand-made parts that are perfectly regular or machined parts that are randomly warped; arms, hooks or handles with a square or octagonal section instead of a hexagon; tape, straps, bands or labels that are flat sheets floating above a surface, hang off an edge, ignore the host's chamfer or stand out as a separate slab.**
 
 ### 3.6 Checkable geometry rules (verify numerically before delivering)
-- **Flat-edge bevels = exactly 1 segment** (flat 45-degree chamfer), about 3-6% of the object's smallest dimension on hero props (2-3% on architecture). Multi-segment rounding is allowed ONLY on a declared soft part (Sec. 4.2).
+- **Where a chamfer is used (decided per part, Sec. 4.5) it is exactly 1 segment** (flat 45-degree chamfer), about 12% of the part's smallest dimension (0.03-0.08 studs; 2-3% on architecture). Thin stock and seams stay sharp. Multi-segment rounding is allowed ONLY on a declared soft part (Sec. 4.2).
 - **Bases = at most 2 stacked levels** (one flange plus one block). Never 3+ tiers or stacked slabs.
 - **Solid objects stay solid:** no hollow wrap-around shells or deep cavities. Small steps are allowed and required for readability.
 - **Overhangs are tiny:** any lid, cover or top overhang is at most ~5% of the smallest dimension.
@@ -130,10 +133,10 @@ Chunky, slightly oversized, toy-like but not cartoonish. Strong, readable primar
 
 | Tier | Which parts | Rules |
 |------|-------------|-------|
-| **CRISP** (default for everything not declared otherwise) | Plates, brackets, arms, posts, stems, legs, handles, trays, holders, bases, feet, flanges, brims, frames, bodies, boxes, lids, bezels, hands, doors, shelves, hardware, and every "round-looking" functional part (tubes, cylinders, rings) | Flat-shaded planar facets. Round forms are 8-sided prisms or lathes (never more than 8 sides). Plan-view corners are real corners (equal-leg 45-degree cuts on plates). Edges are either sharp or ONE flat 45-degree chamfer strip. Every turn between adjacent facets is about 45 or 90 degrees (never gentler than about 30). No bevel segments beyond 1, no subdivision, no custom or weighted normals, no smooth shading. Curves are chains of straight segments (Sec. 4.3) |
+| **CRISP** (default for everything not declared otherwise) | Plates, brackets, arms, posts, stems, legs, handles, trays, holders, bases, feet, flanges, brims, frames, bodies, boxes, lids, bezels, hands, doors, shelves, hardware, and every "round-looking" functional part (tubes, cylinders, rings) | Flat-shaded planar facets. Round forms are 8-sided prisms or lathes (never more than 8 sides). Plan-view corners are real corners (equal-leg 45-degree cuts on plates). Edges are either sharp or ONE flat 45-degree chamfer strip, decided per part (Sec. 4.5). Every turn between adjacent facets is about 45 or 90 degrees (never gentler than about 30). No bevel segments beyond 1, no subdivision, no custom or weighted normals, no smooth shading. Curves are chains of straight segments (Sec. 4.3) |
 | **HAND-MADE / WONKY** (declared per part; flat-shaded like everything else) | Parts that are hand-made, soft-bodied or aged: wax, clay, dough, cloth bundles, paper stacks, sacks, rope coils, roughly cut wood, crumpled things | Still faceted, flat-shaded, at most 8 sides, no smoothing. Add controlled irregularity: lean, uneven taper, uneven top, irregular facet sizes (Sec. 4.4). Machined neighbours stay regular |
 | **ORGANIC FACETED** | Foliage, soil, rubble, rock | Flat-shaded irregular facets (Sec. 4.7). Rough, not smooth |
-| **SOFT** (declared; at most 1 per object, 2 only with a stated reason) | Only the focal part whose smooth curvature IS its recognition feature, a dome-like or bulb-like shape that the eye goes to first | Smooth-shaded through 4-5 evenly spaced profile rings; no long thin triangles. Its neighbours (rim, base, knob, arm) stay crisp. Listed as `soft_parts` in the spec |
+| **SOFT** (declared; at most 1 per object, 2 only with a stated reason) | Only the focal part whose smooth curvature IS its recognition feature, a dome-like or bulb-like shape that the eye goes to first | Smooth-shaded through 4-5 evenly spaced profile rings; a CLEAN surface of revolution (no noise, lumps, displacement or irregular rings; wonk never applies here); no long thin triangles. Its neighbours (rim, base, knob, arm) stay crisp. Listed as `soft_parts` in the spec |
 
 **Attention test.** A part may be soft only if (a) its curve is what makes the object recognisable and (b) a player's eye goes to it first. A plate, bracket, arm, tray, holder or any other functional part fails both: crisp. When in doubt, make it a faceted curve (Sec. 4.3) instead of a soft part.
 
@@ -180,8 +183,16 @@ Not everything is machined. Parts that are hand-made, soft-bodied or aged feel m
 
 **Toolkit:** build the part with `tk.lathe(..., sides=8)` and then `tk.wonky(m, ("<tag>",), lean=0.05, taper=-0.14, jitter=0.05, top_tilt=0.2, seed=n)`. Pass its tag as an `organic_tag` to `tk.audit_mesh`.
 
-### 4.5 Chamfers and octagonal profiles
-Every hard edge is either left sharp (a plain prism is fine, and is the default for simple plates) or gets exactly ONE flat 45-degree chamfer strip, which catches rim light. A chamfer is a flat cut, never a rounded profile. Round bodies become 8-sided prisms and lathes (seats, bases, buttons, wheels, bulbs, shades, barrels). Rotate the octagon so a flat faces the front axis.
+### 4.5 Edge treatment, octagons and cross-sections
+**Edge treatment is DECIDED per part; it is never applied to everything.** A chamfer (ONE flat 45-degree strip that catches rim light, the Doors "smoothed corner") is something a part earns; a sharp edge is the default. A chamfer is a flat cut, never a rounded profile. Decide in this order and write `edge: sharp | chamfer` for every part in the spec:
+1. **Seams first.** Where two parts meet face to face (a cap on a post, a lid on a body, a bar end in a host, a part against a wall), the meeting edges are SHARP and flat on both parts so they seat cleanly. Chamfer only the exposed outer edges. A chamfered post top under a chamfered cap leaves a groove. A post that carries a cap has a FLAT top (chamfer its vertical edges only, `tk.slab` + `tk.cut_rect`) and the cap has a flat underside with the chamfer on its top edge only.
+2. **Thin stock stays SHARP:** planks, boards, rails, handrails, slats, flat bars, panels, skirting, trim pieces, anything under about 0.25 studs thick. A chamfer on thin stock eats its thickness and reads as a doubled edge. Repeated thin pieces in a group (fence boards, rack bars, slats) stay sharp however large the group.
+3. **Thick, exposed, chunky solids get ONE chamfer on the exposed edges:** shelf tops and tabletops about 0.3 studs or thicker, crates, boxes, chests, counters, seats, thick posts and beams, bezels, bases. Size about 12% of the part's smallest dimension, clamped to 0.03-0.08 studs. Chamfered shelf fronts and box edges look good and are wanted.
+4. **Hero or touched parts** (a handle, a bezel) may take the chamfer when slightly thinner than 0.3, but never thin stock.
+5. **When unsure:** long and thin = sharp; short and fat = chamfer. `tk.edge_style(dims)` and `tk.auto_box(...)` encode this.
+The same decision is made inside one object: a rack has chamfered thick uprights and shelf tops but sharp thin cross bars.
+
+Round bodies become 8-sided prisms and lathes (seats, bases, buttons, wheels, bulbs, shades, barrels). Rotate the octagon so a flat faces the front axis.
 
 **Cross-section rule (decide it per part, state it in the spec as `section`):**
 - **Round body (lathe, plan view): octagon, 8 sides.**
@@ -314,14 +325,14 @@ UI/labels (if requested): condensed bold sans (Oswald-like), cream `#F5E8D0` on 
 ### 9.1 Triangle budgets
 | Class | Target | Hard max |
 |-------|--------|----------|
-| Small prop (candle, knob, book, bell, clock, lamp) | 30-250 | 400 |
-| Medium prop (stool, chair, crate, radiator, barrel) | 150-600 | 1,000 |
-| Large prop (sofa, generator, toolbox) | 400-1,500 | 2,500 |
-| Hero set-piece (bed, chandelier, terminal) | 1,000-3,000 | 4,500 |
+| Small prop (candle, knob, book, bell, clock, lamp) | 150-500 | 800 |
+| Medium prop (stool, chair, crate, radiator, barrel) | 400-1,200 | 2,000 |
+| Large prop (sofa, generator, toolbox) | 1,000-3,000 | 4,500 |
+| Hero set-piece (bed, chandelier, terminal) | 2,000-5,000 | 7,000 |
 | Architecture kit piece | 50-800 | 1,500 |
 | Roblox upload limit | | 20,000 per mesh; never approach it |
 
-Lower is better; over target means too detailed. Prefer instancing the same MeshId. No interior faces, hidden geometry or n-gons on export (triangulate); merge by distance. Avoid thin cards for solid objects.
+Stay inside the target band: over it means ornament, under it means under-built (Sec. 3.4). These bands are estimates. Prefer instancing the same MeshId. No interior faces, hidden geometry or n-gons on export (triangulate); merge by distance. Avoid thin cards for solid objects.
 
 ### 9.2 Pivot, orientation, scale
 Pivot bottom-center for floor props, back-center for wall props, hinge edge for doors. Roblox front face = -Z (in Blender the front is typically -Y; verify the import in Studio). +Y up in Roblox. Build at 1 Blender unit = 1 stud, apply all transforms (scale 1,1,1) and verify the bounding box in Studio. Do not rely on resizing in Studio.
@@ -370,7 +381,7 @@ Every object is a short list of parts, and every part is one of these types. A t
 | Part type | What it is | Tier | Build with | Rules |
 |-----------|-----------|------|-----------|-------|
 | **Plate / slab** | Mounting plates, panels, signs, lids, boards, covers, flat backs | CRISP | `tk.slab` (plain prism or ONE flat chamfer) | Octagon or rectangle with equal-leg 45-degree corner cuts; 0.2-0.35 studs thick (or ~5-8% of its width); hard corners; wide and chunky; never rounded, never a superellipse |
-| **Block / body** | Boxes, cabinets, casings, chests, frames, seat masses | CRISP | `tk.chamfer_box` / `tk.plain_box` | One chamfer segment at most; large plain faces; 3-4 clear masses, not many small ones |
+| **Block / body** | Boxes, cabinets, casings, chests, frames, seat masses | CRISP | `tk.auto_box` (decides), `tk.chamfer_box` / `tk.plain_box` | Edge style per Sec. 4.5 (sharp or one chamfer segment); large plain faces; 3-4 clear masses, not many small ones |
 | **Round body** | Vessels, bases, stems, stools, drums, bulbs, wheels, posts | CRISP | `tk.lathe(..., sides=8)` | 8-sided; profile turns of 45 or 90 degrees only; at most 2 stacked levels in a base; no shallow slopes |
 | **Bar / arm / post** | Straight or L-shaped supports, arms, handles, brackets, fitting stems | CRISP | `tk.tube(..., sides=6)`; `tk.chamfer_box` only for blocky furniture posts | **Hexagonal cross-section** (Sec. 4.5), chunky, never a thin wire, a smooth tube, a square or an octagon; leaves its support at a clear angle |
 | **Curved member** | Bent arms, rings, hoops, handles, hooks, arches | CRISP | `tk.turtle` + `tk.tube(..., sides=6)`, or `tk.arc` + `tk.tube(..., sides=6)` | Hexagonal section; chain of straight segments with mitred, visible joints; every joint turns >= 30 degrees; <= 6 segments per half circle (Sec. 4.3) |
@@ -383,6 +394,7 @@ Every object is a short list of parts, and every part is one of these types. A t
 | **Mark / face** | Dial marks, label shapes, bands, stripes, hands, buttons | CRISP | `tk.prism`, `tk.chamfer_box` | Flat or low-relief (3-6% of size); large; a separate color region; no engraving, text or micro-detail |
 | **Contents / fill** | What a container holds: soil, liquid, items, light | ORGANIC or CRISP | as the content type | If the container is open, its contents are visible and sit just below the rim; never an empty shell or a flat disc |
 | **Wrap / strip** | Tape, straps, bands, stripes, labels, hoops: anything applied to the surface of a host part | CRISP | `tk.wrap_band` (box hosts), `tk.lathe` band rings (round hosts) | **Follows the host:** it is the host's own cross-section pushed out 1-3% (`t`), so it lies flat on each face and turns every corner on the host's single 45-degree chamfer face. It never floats, clips into the host, overhangs, flaps off an edge or sits as a flat sheet on top; check it with `tk.audit_clipping`. It starts and ends on a face (tape stops partway down a side) or closes into a full ring. Width >= 10% of the host. Its own edges are hard, no chamfer needed at 1-3% thickness. Separate color region |
+| **Transition piece** | Collar, bracket, boss, socket, cap, foot, step ring, brace: the piece that shows how two parts are joined | CRISP | `tk.chamfer_box`, `tk.lathe` | Chunky, slightly wider than the part it holds; ONE per joint; sits flush on both parts (no gaps, no clipping); never decorative |
 | **Attachment** | Handle, latch, knob, lever, hook | CRISP | `tk.chamfer_box`, `tk.tube(..., sides=6)` | One per function; short, chunky, flat-capped; never ornamental |
 
 **Universal construction rules**
@@ -392,7 +404,28 @@ Every object is a short list of parts, and every part is one of these types. A t
 4. **Symmetry for machined, asymmetry for hand-made.** Mirror pairs and sets; give hand-made parts different heights, leans and seeds.
 5. **Everything has thickness.** Rims, plates, walls and lips have visible thickness (about 3-8% of the object's size); no zero-thickness cards for solid things.
 6. **Applied parts follow their host.** Anything that sits on another part's surface (tape, strap, band, stripe, label, trim line) copies the host's structure: same faces, same corner chamfer, tiny uniform offset. Build it from the host's own dimensions, never as an independent flat plane.
-7. **One decision per part.** A part has one tier, one Roblox Material and one flat vertex color. If a part needs two, it is two parts.
+7. **Plan the joints and the details before building** (Sec. 11.1 and 11.2).
+8. **One decision per part.** A part has one tier, one Roblox Material and one flat vertex color. If a part needs two, it is two parts.
+
+### 11.1 Joinery: how bars and parts connect
+Structure must read as honestly built. **Every bar end is either buried in a host or deliberately free.** (Seen in a real test: a frame whose rails and posts overlapped, crossed through each other, stopped short and left a post hanging. Clean version: posts rise above the rail and finish in a chamfered cap, and the rail runs into both posts.)
+- **Default joint = buried end.** The bar's end runs about half its own width INTO the host, so the end face is hidden inside it. The whole end face sits inside the host's flat face (the bar is narrower than the host minus its chamfers). If the bar has its own chamfer, bury it at least that deep so the chamfered end is hidden too. Build with `tk.bar_between(m, p0, p1, w, tag, host0, host1, bury, c)`.
+- **Posts carrying a rail finish above it:** the post extends at least one post-width above the rail and ends in a cap (a block slightly wider than the post, overhang <= 5%). **Post top and cap underside are both FLAT and sharp so they seat in a clean seam; only the cap's top edge is chamfered** (Sec. 4.5, rule 1). A rail never ends flush with the top of a post.
+- **T-joint:** the crossing bar ends in the SIDE of the through bar (buried). **Corner:** one bar runs into the other, or both end in a mitre; never two raw ends meeting. **X-crossing:** avoid; one bar is continuous and the other is two buried stubs.
+- **Hanging members** (braces, pendants, drops) join into the member above AND into the thing they rest on.
+- **Never:** a bar that passes through another and sticks out the far side; a bar that stops short of its host (a gap); a bar wider than the host's flat face; two bars occupying the same space (coplanar overlap, z-fighting); a free end that was meant to be joined; a visible raw cut end where a joint should be.
+- **Hex/tube members** (Sec. 4.3) obey the same rule: the end that meets a plate or body is buried (`cap_start=False` and the first segment starts inside the host).
+- **Tags:** give each body that touches another body its own tag (post, rail, brace, cap), even if they share a color, so the checks can test each joint. Merge tags with the same Material afterwards if you like.
+- **Checks:** `tk.audit_connections` (every joined end fully inside its host) and `tk.audit_clipping`, plus the orbit-and-zoom review (Sec. 0, step 5).
+
+### 11.2 Where details go: the detail plan
+Under-detailed objects fail as much as over-detailed ones. Decide detail deliberately, in this order, and write it into the spec as `detail_plan`:
+- **L0 Masses:** the 2-4 big forms and their silhouette.
+- **L1 Recognition features** (Sec. 3.2).
+- **L2 Structure:** a transition piece at EVERY joint and end (a collar where an arm meets a plate, a socket or boss under a shade or head, a cap on a post top, a foot under a leg, a bracket under a shelf, a band where two materials meet), plus ONE operating detail on every functional part (a switch, handle, latch, dial, button).
+- **L3 Character:** the wonk on hand-made parts, value variation between parts, the single accent.
+**Every object reaches L2.** Where to spend detail, in priority order: (1) where parts meet; (2) the hero part, the working end that people look at or use, which gets about 40-50% of the triangles and at least 3 distinct features; (3) the ends and tops of members; (4) silhouette steps. **Large faces, backs and undersides stay plain** (a wall object's wall side gets nothing).
+**Test:** point at every place two parts meet: is there a visible transition piece or a deliberate step? Point at the hero part: does it have 3 or more features? Point at the plain faces: are they large and quiet? If any answer is no, fix it before the review.
 
 ---
 
@@ -405,8 +438,13 @@ interpretation: ""         # one line: how you read the request (canonical form)
 biome: Mines | Manor | Office
 recognition_features: []   # 2-4 features that make it nameable in gray (Sec. 3.2)
 parts:                     # EVERY part, typed from the Sec. 11 grammar
-  - {name: "", type: plate | block | round_body | bar | curved_member | shell | dome | stepped_base | hand_made | organic | emitter | mark | wrap | contents | attachment, tier: crisp | hand_made | organic | soft, section: oct8 | hex6 | box4 | none, host: "", tool: "", note: ""}   # section: bars = hex6, round bodies = oct8; host: the part a wrap sits on
-simplicity_justification: ""   # what ornament was deliberately left out
+  - {name: "", type: plate | block | round_body | bar | curved_member | shell | dome | stepped_base | hand_made | organic | emitter | mark | wrap | contents | attachment, tier: crisp | hand_made | organic | soft, edge: sharp | chamfer, section: oct8 | hex6 | box4 | none, host: "", tool: "", note: ""}   # section: bars = hex6, round bodies = oct8; host: the part a wrap sits on
+detail_plan:                    # Sec. 11.2 (every object reaches L2)
+  hero_part: ""                # the working end that gets about half the detail
+  transition_pieces: []         # collar / bracket / socket / cap / foot at each joint
+  operating_detail: ""          # switch, handle, latch, dial, button
+joints: []                      # Sec. 11.1: each bar end as "bar -> host, buried 0.5w" or "free"
+simplicity_justification: ""   # what ORNAMENT was deliberately left out (structural detail stays)
 originality_note: ""       # how it differs from any reference/example it resembles
 style_rules_applied: []    # cite section numbers
 gameplay_role: dressing | interactable | hideable | lootable | light_source | architecture
@@ -446,17 +484,20 @@ attributes: {Biome: "", Interactable: false}
 ## 13. Checklist (run honestly; list every failure)
 
 **Process**
-- [ ] First reply started with `Guide v18 read`; interpretation and `recognition_features` stated per object; spec with typed `parts:` approved before building.
+- [ ] First reply started with `Guide v20 read`; interpretation and `recognition_features` stated per object; spec with typed `parts:` approved before building.
 - [ ] Built from scratch with the toolkit; real `tk.stats()` triangle counts reported (0 degenerate triangles).
 - [ ] Reviewed in the Sec. 8.2 rig (Material Preview, not gray), including close-ups of corners and joints.
 - [ ] Studio hand-off written for every group (Sec. 9.6); mesh names final.
 
 **Style and shape**
 - [ ] Recognition features present: someone without the label could name each object (Sec. 3.2); reads in a plain gray viewport.
+- [ ] **Joinery (Sec. 11.1):** every bar end is buried in a host or declared free; posts carrying rails finish above them in a cap; nothing crosses through, floats, stops short, pokes out or overlaps in the same space; `tk.audit_connections` clean.
+- [ ] **Detail plan (Sec. 11.2):** hero part with 3+ features; a transition piece at every joint; one operating detail; part count within Sec. 3.1; plain faces large; the object is not under-built.
 - [ ] No ornament, no stepped/terraced rings, no domes built as hard-paneled cones, no tall fussy finials.
 - [ ] Octagonal plans for round forms; flat edges have exactly 1-segment chamfers; base <= 2 levels; solid; overhang <= 5%.
 - [ ] **Crisp by default (Sec. 4.2):** every part is flat-shaded with hard corners except the declared soft part(s) (at most 1, max 2 with a reason); plates have real corners; arms/posts are box or 8-sided sections, not smooth tubes; no more than 8 sides; no bevel/subdivision/smooth/weighted-normal modifiers.
 - [ ] **Curves are facet chains (Sec. 4.3):** every bent member is a chain of straight segments with visible mitred joints, each joint >= 30 degrees, <= 6 segments per half circle.
+- [ ] **Edge treatment decided per part (Sec. 4.5):** thin stock sharp; thick exposed solids one chamfer; seams (cap/post, lid/body, bar ends) flat and sharp with no groove; `edge:` stated per part.
 - [ ] **Cross-sections (Sec. 4.5):** round bodies are octagons; every arm, hook, handle and ring is a hexagon (`sides=6`); stated per part in the spec.
 - [ ] **Applied parts follow the host (Sec. 11, Wrap):** tape, straps, bands and stripes hug the host's faces and corner chamfers, do not float, overhang or hang off edges, and start and end on a face.
 - [ ] **Hand-made parts are wonky (Sec. 4.4):** lean, uneven taper, uneven top, irregular facets; machined parts are exact; copies differ.
@@ -498,6 +539,8 @@ import doors_examples as ex      # optional
 - `tk.prism(m, poly, z0, z1, tag)`: extruded convex 2D polygon for flat chunky parts (hands, blades, label plates).
 - `tk.slab(m, poly, z0, z1, tag, c=0.0, both=False)`: CRISP plate from a convex polygon. `c=0` is a plain prism; `c>0` adds exactly one flat 45-degree chamfer on the front edge. `tk.inset_poly` offsets a polygon inward.
 - **Curves from facets (Sec. 4.3):** `tk.turtle(start, direction, axis, ops)` builds a bent path (`ops` = `("f", length)` and `("t", degrees)`); `tk.arc(center, radius, a0, a1, segs, plane)` builds a pure arc as a polyline; `tk.tube(m, pts, r, tag, sides=6, taper=1.0, cap_start=True, cap_end=True)` sweeps a chunky mitred hexagonal bar along the points (use `sides=6` for arms, hooks, handles and rings; `sides=8` is for round bodies). Both path helpers warn if a turn is below 30 degrees.
+- **Edge decisions (Sec. 4.5):** `tk.edge_style(dims, role)` returns ("sharp", 0) or ("chamfer", c); `tk.auto_box(m, lo, hi, tag, role)` builds the box with that treatment; `tk.cut_rect(x0, y0, x1, y1, k)` gives the plan of a post with chamfered vertical edges (use with `tk.slab` so top and bottom stay flat).
+- **Joinery (Sec. 11.1):** `tk.bar_between(m, p0, p1, w, tag, host0, host1, bury=None, c=0.0, h=None)` builds an axis-aligned bar whose ends run INTO named host tags (or "free"); `tk.audit_connections(m)` verifies every joined end sits fully inside its host.
 - **Clipping check:** `tk.audit_clipping(m, [("tape", "carton"), ("arm", "backplate")], eps=0.004)` flags any vertex of the first tag that sits inside the closed host tag by more than `eps` studs (the overlap you allow; raise it only for a deliberately buried joint).
 - **Applied strips (Sec. 11):** `tk.wrap_band(m, lo, hi, c, axis, pos, width, t, tag, edges=None, reach=1.0)` builds tape, straps and bands that hug a `chamfer_box` host. `edges` picks a run of the host's cross-section edges (e.g. `[2,3,4,5,6]` = over the top and down both sides), `reach` stops the strip partway down the side faces, `t` is the 1-3% offset.
 - **Hand-made irregularity (Sec. 4.4):** `tk.wonky(m, tags, lean, taper, jitter, top_tilt, seed)` edits vertices in place. Only for hand-made parts.
