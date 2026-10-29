@@ -1,8 +1,8 @@
 # Doors Asset Style Guide
 
-**GUIDE VERSION: v15**
+**GUIDE VERSION: v18**
 **Audience:** Claude, working in Blender through MCP. **Purpose:** a universal method for making NEW, original props, furniture, fixtures and set pieces for a Roblox game in the "Doors" art style, for ANY object type. This guide teaches how to build any object (the method and a grammar of part types). It contains no recipes for specific objects; worked examples live in `examples/EXAMPLES.md`.
-**Newest rules:** (1) parts are CRISP by default and only one declared focal part may be soft (Sec. 4.2); (2) curves are built from straight, chunky facets with visible joints, never from softening (Sec. 4.3); (3) hand-made parts get a controlled wonky irregularity so they feel stylized, not machined (Sec. 4.4).
+**Newest rules:** (1) parts are CRISP by default and only one declared focal part may be soft (Sec. 4.2); (2) curves are built from straight, chunky facets with visible joints, never from softening (Sec. 4.3); (3) hand-made parts get a controlled wonky irregularity (Sec. 4.4); (4) bars, arms, hooks, handles and rings have a HEXAGONAL cross-section (Sec. 4.5); (5) tape, straps, bands and stripes are built to follow their host's surface and its single 45-degree chamfer, never as flat sheets lying on or hanging off it (Sec. 11, Wrap).
 **Confidence:** style traits come from direct observation of about 24 in-game screenshots; sizes, colors and the Roblox Material choices are estimates. Treat numbers as starting values. Verified and unverified facts live in `LEARNINGS.md`.
 
 ---
@@ -11,12 +11,12 @@
 
 **Read only this guide** and the files it names (`toolkit/`, `examples/`, and `LEARNINGS.md` or `references/` when a section says so). Ignore any other copies of the guide, earlier models, and earlier instructions. Build everything from scratch: no free, marketplace or Creator Store models.
 
-1. **Receipt.** Begin your FIRST reply with `Guide v15 read`. If you cannot state "v15", you are reading an old copy: stop and say so.
+1. **Receipt.** Begin your FIRST reply with `Guide v18 read`. If you cannot state "v18", you are reading an old copy: stop and say so.
 2. **Interpret.** For each requested object, say in one line how you interpret it. Use the most common, canonical form of the named object (the form most people picture first). If it is genuinely ambiguous, ask. If the user supplies reference images, use them only for detail level, shape language and finish (Sec. 3.3).
 3. **Spec first.** For each object output the Sec. 12 spec (including its `parts:` list), then **wait for approval** before building, unless the user said to build directly.
 4. **Build** with the toolkit (Sec. 14), part by part, using the part grammar (Sec. 11). Every part is CRISP unless you declare it soft (Sec. 4.2); hand-made parts follow Sec. 4.4. Report real triangle counts from `tk.stats()`.
-5. **Review** in the Sec. 8.2 rig (Material Preview, dark warm light), never in a gray Solid viewport. Zoom in on every plate, arm, joint, rim and holder and confirm the corners are hard and the curves are visibly faceted.
-6. **Check:** run `tk.audit_mesh` and `tk.audit_style` (Sec. 4.2), then the Sec. 13 checklist, honestly, and list any failures.
+5. **Review** in the Sec. 8.2 rig (Material Preview, dark warm light), never in a gray Solid viewport. Zoom in on every plate, arm, joint, rim and holder and confirm the corners are hard and the curves are visibly faceted. **Double-check clipping:** orbit every object from at least 4 sides and from above, zoom in on every place two parts meet (strips on a host, arms on plates, candles in holders, lids on bodies, handles on bodies), and confirm nothing pokes through a surface or leaves a gap. Run `tk.audit_clipping` (Sec. 14) too.
+6. **Check:** run `tk.audit_mesh`, `tk.audit_clipping` and `tk.audit_style` (Sec. 4.2), then the Sec. 13 checklist, honestly, and list any failures.
 7. **Hand off** to Studio (Sec. 9.6): write the Luau script and manifest, and tell the user the export/import steps.
 
 **Rule precedence when rules conflict (highest first):**
@@ -32,7 +32,7 @@ If a user request conflicts with a hard constraint, follow the constraint and st
 ## 1. Style DNA (what every asset keeps)
 
 1. **Crisp chamfered low-poly stylization.** Simplified primitives with flat facets, real corners and (where used) a single flat 45-degree chamfer strip. **There is no softness added anywhere: smoothness is made out of sharp blocks.** A curve is a chain of chunky straight segments whose joints you can see (Sec. 4.3). Smooth shading is the rare exception, reserved for one focal part per object (Sec. 4.2).
-2. **Octagon as the signature shape.** Every round 3D form (buttons, stools, bases, wheels, bulbs, shades, barrels, arms, candles) is 8-sided in plan view. No hex or other counts for 3D round forms. Flat painted label shapes may use other polygon counts.
+2. **Octagon for round bodies, hexagon for bars.** Every round 3D body (buttons, stools, bases, wheels, bulbs, shades, barrels, candles) is 8-sided in plan view. Every bar-like member (arms, hooks, handles, rings, brackets that bend) has a 6-sided (hexagonal) cross-section (Sec. 4.5). No other counts. Flat painted label shapes may use other polygon counts.
 3. **Built-in Roblox Materials give surface character; geometry gives silhouette.** No custom textures (Sec. 5).
 4. **Warm light versus dark void.** Light sources are small, bright and warm; everything else falls into deep shadow. Horror comes from contrast, not clutter or gore.
 5. **Readable gameplay objects.** Interactables read instantly through the one saturated accent against a muted environment.
@@ -62,8 +62,8 @@ Use this for every object, including ones nobody has built before.
 3. **Size it by analogy** from the anchor table (Sec. 7). Keep true relative scale to its neighbours.
 4. **Break it into parts** and give every part a type from the part grammar (Sec. 11): plate, block, round body, bar, curved member, shell, dome, stepped base, hand-made part, organic mass, emitter, mark, contents, attachment. Write the list in the spec as `parts:`.
 5. **Decide the tier of every part** (Sec. 4.2): crisp (default), organic or hand-made wonky (Sec. 4.4), or soft. At most one soft focal part; decide it now, or none.
-6. **Split by color/material region.** One MeshPart holds one Roblox Material and one Color3, so every distinct region becomes its own mesh (tag). Group regions that belong to one recognition feature as one part group (Sec. 3.1 caps).
-7. **Assign Roblox Materials and Color3** per region (Sec. 5), with 2-3 value steps and at most one accent.
+6. **Split by material/color region.** One MeshPart holds one Roblox Material, and its color is a flat vertex color baked into the FBX, so every distinct region becomes its own mesh (tag). Group regions that belong to one recognition feature as one part group (Sec. 3.1 caps).
+7. **Assign a Roblox Material (set in Studio) and a vertex color (exported from Blender)** per region (Sec. 5), with 2-3 value steps and at most one accent.
 8. **Budget it** (Sec. 9.1). Under budget is correct. If over, cut ornament and facets, never recognition features.
 9. **Vary it** so it is not a copy of any reference or example: different proportions, feature layout, color family, wonk seed.
 10. **Build, review, check, hand off** (Sec. 0).
@@ -76,7 +76,7 @@ Use this for every object, including ones nobody has built before.
 **Doors props are simple but not blank.** Remove ORNAMENT; never remove a recognition feature. Forms are clean, chunky and few-part, with large plain faces.
 - **Part caps** (a group of regions serving one recognition feature counts as one part): small dressing 1-3 parts, medium props 3-6, hero set-pieces 6-10. Roblox regions can push the mesh count to about 3-6 for one small object.
 - **Ornament is anything the object works without** and is banned: stitching, ribbons, corner caps, medallions, studs, rivets, engravings, filigree, tassels, individual hinges, trim bands, finials, gold trim. (Big chunky bolts on industrial metal are allowed.) Trim and molding are for architecture only (Sec. 4.8).
-- **Leave large faces plain:** one Color3 on one built-in Material.
+- **Leave large faces plain:** one flat vertex color on one built-in Material.
 - **Squint test:** the silhouette reads in about one second and you can describe the object in one short sentence.
 - **Reuse beats variety:** make 2-3 simple variants and vary scale, tilt or color.
 - **Tall, thin, fussy top pieces are banned:** knobs, finials and caps are short, chunky and flat-capped.
@@ -106,7 +106,7 @@ For ANY object there are two ways to be wrong. Place your design between them.
 | **Machined-wonky mix-up** | Candles/clay/cloth perfectly regular, or plates/hardware randomly warped | Regular for machined parts, controlled wonk for hand-made parts (Sec. 4.4) |
 
 ### 3.5 Anti-patterns (reject on sight)
-Stepped or terraced domes and cylinders; ornamental extras; jewel-tone or metallic-gold colors; separate geometry for pure ornament; domes built as cones of hard panels; the wrong Roblox Material on a part (Wood on a metal dome); more than 4 color regions on one object; decorative contrasting rims that exist only for detail; no value contrast between parts; flowers, berries, fruit or nubs on plants unless the user asks; a straight thin pin trunk; a container whose contents are missing or a flat disc; unusual variants of the named object; **rounded or softened corners on plates, arms, trays, holders or candles; smooth round tubes and smooth cylinders for functional parts; arms bent with rounded or subdivided bends; smooth shading, Auto Smooth, Bevel, Subdivision or Weighted Normal on a crisp part; cylinders with more than 8 sides; shallow slopes (gentler than about 30 degrees) that read as a soft dome; hand-made parts that are perfectly regular or machined parts that are randomly warped.**
+Stepped or terraced domes and cylinders; ornamental extras; jewel-tone or metallic-gold colors; separate geometry for pure ornament; domes built as cones of hard panels; the wrong Roblox Material on a part (Wood on a metal dome); more than 4 color regions on one object; decorative contrasting rims that exist only for detail; no value contrast between parts; flowers, berries, fruit or nubs on plants unless the user asks; a straight thin pin trunk; a container whose contents are missing or a flat disc; unusual variants of the named object; **rounded or softened corners on plates, arms, trays, holders or candles; smooth round tubes and smooth cylinders for functional parts; arms bent with rounded or subdivided bends; smooth shading, Auto Smooth, Bevel, Subdivision or Weighted Normal on a crisp part; cylinders with more than 8 sides; shallow slopes (gentler than about 30 degrees) that read as a soft dome; hand-made parts that are perfectly regular or machined parts that are randomly warped; arms, hooks or handles with a square or octagonal section instead of a hexagon; tape, straps, bands or labels that are flat sheets floating above a surface, hang off an edge, ignore the host's chamfer or stand out as a separate slab.**
 
 ### 3.6 Checkable geometry rules (verify numerically before delivering)
 - **Flat-edge bevels = exactly 1 segment** (flat 45-degree chamfer), about 3-6% of the object's smallest dimension on hero props (2-3% on architecture). Multi-segment rounding is allowed ONLY on a declared soft part (Sec. 4.2).
@@ -145,7 +145,7 @@ Chunky, slightly oversized, toy-like but not cartoonish. Strong, readable primar
 - 12, 16 or 32 sides on a cylinder.
 - Shallow cone tops or slopes that read as a soft dome.
 
-**How to build crisp parts (toolkit):** plates with `tk.slab`; blocks and straight arms with `tk.chamfer_box`; round-looking parts with `tk.lathe(..., sides=8)`; bent arms, rings and handles with `tk.turtle` + `tk.tube` (Sec. 4.3); flat chunky pieces with `tk.prism`. Smooth shading only through `to_blender(..., smooth_tags=("<soft tag>",))`. Never call `shade_smooth` on anything else.
+**How to build crisp parts (toolkit):** plates with `tk.slab`; blocks with `tk.chamfer_box`; straight and bent arms with `tk.tube(..., sides=6)`; round-looking parts with `tk.lathe(..., sides=8)`; bent arms, rings and handles with `tk.turtle` + `tk.tube(..., sides=6)` (Sec. 4.3); flat chunky pieces with `tk.prism`; tape, straps and bands with `tk.wrap_band` (Sec. 11). Smooth shading only through `to_blender(..., smooth_tags=("<soft tag>",))`. Never call `shade_smooth` on anything else.
 
 **Checks (required before the hand-off):**
 - `tk.audit_mesh(mesh, soft_tags=(...), organic_tags=(...))` returns no issues. It flags runs of softly rounded edges (6-28 degree turns): multi-segment bevels, 16-sided cylinders, smooth profile rings, and faceted curves whose joints turn less than 30 degrees. `soft_tags` are the regions you declared soft; `organic_tags` are the foliage-like and hand-made regions whose facets are meant to be irregular.
@@ -158,9 +158,9 @@ Chunky, slightly oversized, toy-like but not cartoonish. Strong, readable primar
 
 - **Segment budget:** every joint turns **30 degrees or more** (45 is ideal). A quarter circle (90 degrees) is 2-3 segments; a half circle is at most 6 (usually 4-5); a full ring is 8 sides. Fewer, longer segments look better than many short ones.
 - **Mitred, planar joints:** neighbouring segments meet at a mitred angle with flat faces, so every face stays planar and the joint is a visible crease. `tk.tube` does this for you.
-- **Chunky cross-section:** bent members are thick octagonal or square bars, never thin wires; thickness about 0.1-0.25 of the member's length.
+- **Chunky hexagonal cross-section:** bent members are thick HEXAGONAL bars (`sides=6`, one flat face toward the viewer), never square, never octagonal, never thin wires; thickness about 0.1-0.25 of the member's length.
 - **Plates stay plates.** A flat mounting piece never becomes a curve. Curves belong to arms, rings, handles, rims and frames.
-- **Pure arcs vs. straight lead-ins:** `tk.arc(center, radius, a0, a1, segs)` builds a pure curve. For a member that leaves a surface straight and then bends, use `tk.turtle(start, direction, axis, [("f", len), ("t", deg), ...])`; both return points for `tk.tube(m, pts, r, tag, sides=8)`.
+- **Pure arcs vs. straight lead-ins:** `tk.arc(center, radius, a0, a1, segs)` builds a pure curve. For a member that leaves a surface straight and then bends, use `tk.turtle(start, direction, axis, [("f", len), ("t", deg), ...])`; both return points for `tk.tube(m, pts, r, tag, sides=6)`.
 - **Shape language of a fixture or fitting (universal):** a wide flat mounting plate with hard octagonal corners; thick faceted members leaving it; a faceted bend; the working head (cup, tray, shade) as an open 8-sided faceted shell with 45-degree walls. Nothing rounded is added anywhere; the whole object reads smooth because the blocks are big and the angles are even.
 
 ### 4.4 Hand-made parts: the controlled wonk
@@ -181,7 +181,13 @@ Not everything is machined. Parts that are hand-made, soft-bodied or aged feel m
 **Toolkit:** build the part with `tk.lathe(..., sides=8)` and then `tk.wonky(m, ("<tag>",), lean=0.05, taper=-0.14, jitter=0.05, top_tilt=0.2, seed=n)`. Pass its tag as an `organic_tag` to `tk.audit_mesh`.
 
 ### 4.5 Chamfers and octagonal profiles
-Every hard edge is either left sharp (a plain prism is fine, and is the default for simple plates) or gets exactly ONE flat 45-degree chamfer strip, which catches rim light. A chamfer is a flat cut, never a rounded profile. Round things become 8-sided prisms and lathes (seats, bases, buttons, wheels, bulbs, shades, barrels, arms). Rotate the octagon so a flat faces the front axis. The octagon defines the plan-view footprint; it does not mean the elevation profile must be an angular panel.
+Every hard edge is either left sharp (a plain prism is fine, and is the default for simple plates) or gets exactly ONE flat 45-degree chamfer strip, which catches rim light. A chamfer is a flat cut, never a rounded profile. Round bodies become 8-sided prisms and lathes (seats, bases, buttons, wheels, bulbs, shades, barrels). Rotate the octagon so a flat faces the front axis.
+
+**Cross-section rule (decide it per part, state it in the spec as `section`):**
+- **Round body (lathe, plan view): octagon, 8 sides.**
+- **Bar-like member (arm, hook, handle, ring, bent bracket, stem of a fitting): hexagon, 6 sides**, built with `tk.tube(..., sides=6)`; one flat face points outward. This is the default for every such member; do not build it as a square box section or an octagon.
+- **Blocky post or leg of furniture:** square (`chamfer_box`) is allowed.
+- If a reference or the user shows a different section for a part, copy that SHAPE LANGUAGE for the part, but when no section is stated use the rule above. Never mix two sections for the same kind of part inside one object. The octagon defines the plan-view footprint; it does not mean the elevation profile must be an angular panel.
 
 ### 4.6 Shading
 - **Default: flat shading on every part.** Planes, chamfers, round-looking functional parts, faceted curves, hand-made wonky parts and organic masses are all flat-shaded.
@@ -205,12 +211,12 @@ Wainscoting, crown molding, baseboards, door frames and ceiling beams are layere
 
 ## 5. Materials and color (Roblox built-in only)
 
-**Doors uses ONLY Roblox's built-in `Enum.Material`, tinted with the part's Color. There are no custom textures.**
+**Doors uses ONLY Roblox's built-in `Enum.Material`. The color comes from a flat VERTEX COLOR that is baked in Blender and travels automatically inside the FBX; the Material is the only thing set in Studio. There are no custom textures.**
 
-- **Every part = one `Enum.Material` + one `Color3`.** One MeshPart holds one of each, so **every color/material region is its own mesh** (one tag each in the toolkit).
-- **Forbidden:** custom image textures, `SurfaceAppearance` (any map), `MaterialVariant`, `TextureID`, baked albedo or AO, UV painting, decals for detail, vertex-color painting. Anywhere a source or old note says texture, normal map, albedo or tiling, choose a built-in Material + Color3 instead.
+- **Every part = one flat vertex color (from Blender) + one `Enum.Material` (set in Studio).** One MeshPart holds one Material, so **every material/color region is its own mesh** (one tag each in the toolkit). `tk.to_blender` writes the vertex color for you (a flat color attribute named `Col`).
+- **Forbidden:** custom image textures, `SurfaceAppearance` (any map), `MaterialVariant`, `TextureID`, baked albedo or AO, UV painting, decals for detail, painted or gradient vertex colors (only FLAT per-region vertex colors are allowed). Anywhere a source or old note says texture, normal map, albedo or tiling, choose a built-in Material and a flat vertex color instead.
 - **Surface character comes from the Material.** Pick the Material whose built-in look fits. You cannot paint grain, weave or plate patterns. Do not fake patterns with extra geometry.
-- **Blender colors are preview only.** Roblox's materials add their own texture and shine over the Color3, so judge the final look in Studio (Sec. 9.6) and adjust the Material or Color there.
+- **The color arrives with the FBX; the Material is set in Studio.** Studio multiplies the vertex colors by the MeshPart's `Color`, which defaults to grey, so the hand-off script sets `Color` to white (255, 255, 255) and sets only the Material. Roblox's Materials add their own texture and shine on top of the color, so judge the final look in Studio (Sec. 9.6) and swap the Material there if needed.
 - Emissive parts use `Neon` plus a light (Sec. 8.1). Signage and text are added in Studio, not in the mesh.
 
 **Starter mapping (confirm each in Studio):**
@@ -231,15 +237,15 @@ Wainscoting, crown molding, baseboards, door frames and ceiling beams are layere
 
 Biome Material candidates: **Mines** `DiamondPlate`, `Metal`, `WoodPlanks`, `Wood`, `Slate`, `Granite`, `Cobblestone`. **Manor** `Wood`, `WoodPlanks`, `Fabric`, `Plaster`, `Brick`, `Metal`. **Office** `Concrete`, `Plaster`, `Fabric`, `Carpet`, `Plastic`, `SmoothPlastic`, `Metal`. Patterns no built-in Material provides (damask, harlequin, hazard stripes, eye icon) are not built into the asset; they are optional Studio decoration or left out. Roblox has 43 built-in materials (Asphalt, Basalt, Brick, Cardboard, Carpet, CeramicTiles, ClayRoofTiles, Cobblestone, Concrete, CorrodedMetal, CrackedLava, DiamondPlate, Fabric, Foil, ForceField, Glacier, Glass, Granite, Grass, Ground, Ice, LeafyGrass, Leather, Limestone, Marble, Metal, Mud, Neon, Pavement, Pebble, Plaster, Plastic, Rock, RoofShingles, Rubber, Salt, Sand, Sandstone, Slate, SmoothPlastic, Snow, Wood, WoodPlanks) per Roblox's docs.
 
-**Unverified (check in Studio before trusting):** how each Material tiles and scales on a MeshPart, and how Color3 tints each one. If a Material looks stretched, too busy or too shiny on a small prop, try a neighbouring one.
+**Unverified (check in Studio before trusting):** how each Material tiles and scales on a MeshPart, and how the vertex colors combine with each one, and whether the sRGB/linear export choice makes the colors match Blender. If a Material looks stretched, too busy or too shiny on a small prop, try a neighbouring one.
 
 ### 5.1 Color discipline
 - **Muted, earthy, slightly dusty;** albedo-like saturation about 35-55%, values mid-to-dark. Avoid jewel tones (crimson, royal purple, emerald) and metallic gold. Typical: terracotta, brick red, olive, ochre, dusty plum, warm brown, cream bands.
 - **2-3 value steps per object** (dark base, mid body, lighter top or rim). Undersides and bases darker; tops and rims lighter. Do not rely on lighting to create contrast.
 - **At most ONE accent per object:** either one glowing strip/lamp OR one saturated lever/button color. Emissive area stays small. Interactables are the highest-saturation element in a scene.
-- **2-3 color regions per object, 4 maximum.** No pure black or pure white as Color3 (stay within about `#1A1A1A` to `#F0E8D8`).
-- **Wear and dirt** are expressed only through Color3 value differences between parts (slightly darker underside or base, slightly lighter edge parts), never painted grime. Mines: grime in recesses; Manor: cleaner, lightly worn; Office: sterile but aged. No blood or gore.
-- Lighting shifts hues on screen (cool purple ambient turns terracotta pink and olive blue-grey): judge Color3 against a warm-lit reference and do not bake the shifted hue in. Choose Color3 slightly less orange than you want on screen, since warm lighting adds warmth.
+- **2-3 color regions per object, 4 maximum.** No pure black or pure white as a vertex color (stay within about `#1A1A1A` to `#F0E8D8`).
+- **Wear and dirt** are expressed only through color value differences between parts (slightly darker underside or base, slightly lighter edge parts), never painted grime. Mines: grime in recesses; Manor: cleaner, lightly worn; Office: sterile but aged. No blood or gore.
+- Lighting shifts hues on screen (cool purple ambient turns terracotta pink and olive blue-grey): judge the vertex color against a warm-lit reference and do not bake the shifted hue in. Choose the color slightly less orange than you want on screen, since warm lighting adds warmth.
 
 Starter muted prop palette (adjust within +/-10%): terracotta `#A8503C`, brick `#8E4636`, olive `#6B6A38`, dusty plum `#7A5A78`, ochre `#C8803C`, cream band `#E3B88A`, warm tan metal `#9A7B5A`, dark base `#3A2D28`. Cloth objects: one main color, optionally one cream/ochre band color, nothing else. Glow colors: cyan `#8FE4FF`, green `#5CFF6E`, warm `#FFD58A`.
 
@@ -324,22 +330,22 @@ Pivot bottom-center for floor props, back-center for wall props, hinge edge for 
 Visual meshes use `CollisionFidelity = Box` or `Hull` for dressing; `PreciseConvexDecomposition` only for hero props players physically touch. Use invisible simple collision proxies (`Transparency = 1`, `CanCollide = true`) for complex shapes. Dressing that should not block movement: `CanCollide = false` (candles, sconces, wall art, books, clocks). Static props: `Anchored = true`, `CanTouch = false`, `CastShadow = true` (except items under 0.5 studs).
 
 ### 9.4 Performance
-Group each room as a `Model` with `ModelStreamingMode = Atomic`. Keep under about 400 parts and 150k triangles in view per room. `RenderFidelity = Automatic`. Reuse Material + Color3 combinations across a biome. Only hero lights cast shadows.
+Group each room as a `Model` with `ModelStreamingMode = Atomic`. Keep under about 400 parts and 150k triangles in view per room. `RenderFidelity = Automatic`. Reuse Material + color combinations across a biome. Only hero lights cast shadows.
 
 ### 9.5 Naming and tags
 - Mesh naming: `<Group>_<Part>` in PascalCase from the toolkit (for example `Fixture_Plate`, `Chest_Lid`, `Stand_Foot`). Studio hierarchy: `ReplicatedStorage/Assets/{Biome}/{Category}/{Asset}`. PascalCase asset names, no spaces or special characters; collision proxies `COL_...`.
 - Attributes/tags (CollectionService): `Biome` = Mines | Manor | Office; `Interactable` true/false; `Hideable` / `Lootable` where relevant; `LightSource` = true on emissive/lit props.
 
 ### 9.6 Blender pipeline and Studio hand-off (required final deliverable)
-- Build with the toolkit. Octagonal plan = 8-sided lathes; plates = `slab`; flat-sided bodies and straight arms = `chamfer_box` (1-segment chamfers); bent members = `turtle` + `tube`; hand-made parts = `lathe` + `wonky`. Only a declared soft part gets a few smooth-shaded lathe rings (`smooth_tags`). Everything else stays flat-shaded (Sec. 4.2).
-- Run the crisp audits (`tk.audit_mesh`, `tk.audit_style`), apply transforms, and make sure NO bevel, subdivision, smooth or weighted-normal modifiers are left. Export each group (the Empty plus its child meshes) with `tk.export_fbx(path, group)`: FBX with **face smoothing** (flat normals, so crisp corners survive the import), no materials/textures embedded (colors are preview only), 1 unit = 1 stud. If you export by hand, set Smoothing = Face and never export smooth or custom normals on crisp parts. Whether Studio's importer keeps flat normals exactly as exported is unverified: check the corners in Studio.
+- Build with the toolkit. Octagonal plan = 8-sided lathes; plates = `slab`; flat-sided bodies and straight arms = `chamfer_box` (1-segment chamfers); bent members = `turtle` + `tube(sides=6)`; tape and bands = `wrap_band`; hand-made parts = `lathe` + `wonky`. Only a declared soft part gets a few smooth-shaded lathe rings (`smooth_tags`). Everything else stays flat-shaded (Sec. 4.2).
+- Run the crisp audits (`tk.audit_mesh`, `tk.audit_style`), apply transforms, and make sure NO bevel, subdivision, smooth or weighted-normal modifiers are left. Export each group (the Empty plus its child meshes) with `tk.export_fbx(path, group)`: FBX with **face smoothing** (flat normals, so crisp corners survive the import), the flat vertex colors (`Col`) so the colors import automatically, no materials/textures embedded, 1 unit = 1 stud. **Colors come through the FBX; only Materials are edited in Studio.** If you export by hand, set Smoothing = Face and never export smooth or custom normals on crisp parts. Whether Studio's importer keeps flat normals exactly as exported is unverified: check the corners in Studio.
 - When all objects are built and checked, for EVERY object group:
   1. **Finalize mesh names** (`<Group>_<Part>`, unique across the scene). Do not rename afterwards; if you do, regenerate.
-  2. **Write the hand-off files** next to the .blend: `tk.write_handoff(folder, "<group>", parts)` writes `<group>_apply_materials.luau` (paste into Studio's command bar) and `<group>_manifest.md` (mesh name -> Roblox Material -> Color3 -> tris, for doing it by hand).
-  3. **Hand-built meshes:** set the custom properties on each region mesh yourself (`ob["roblox_material"] = "Metal"`, `ob["roblox_color"] = "#RRGGBB"`), named `<Group>_<Part>`, so they join the hand-off.
-  4. **Tell the user, in plain words:** import the file(s) into Studio, select the imported Model, run the contents of the matching `_apply_materials.luau` (or follow the manifest by hand), then check size, part names and look against the references under Doors-style lighting; swap a Material for a neighbouring one if it looks stretched, shiny or busy.
+  2. **Write the hand-off files** next to the .blend: `tk.write_handoff(folder, "<group>", parts)` writes `<group>_apply_materials.luau` (paste into Studio's command bar) and `<group>_manifest.md` (mesh name -> Roblox Material -> vertex color -> tris, for doing it by hand).
+  3. **Hand-built meshes:** set the custom properties on each region mesh yourself (`ob["roblox_material"] = "Metal"`, `ob["roblox_color"] = "#RRGGBB"`), name them `<Group>_<Part>`, and give each a flat vertex color attribute named `Col` in that same color (`tk.to_blender` does this automatically), so they join the hand-off.
+  4. **Tell the user, in plain words:** import the file(s) into Studio, select the imported Model, run the contents of the matching `_apply_materials.luau` (it sets the Materials and sets each MeshPart's `Color` to white so the imported vertex colors show true; or follow the manifest by hand), then check size, part names, colors and look against the references under Doors-style lighting; swap a Material for a neighbouring one if it looks stretched, shiny or busy.
   5. **State what you could not verify.** `to_blender`, `write_handoff` and the Luau script depend on Blender/Studio behaviour that the guide's authors have not fully tested: report errors and what you changed.
-  6. **Final message format:** each group's meshes, Roblox Materials, Color3 hex values, triangle counts, and where the two hand-off files were written.
+  6. **Final message format:** each group's meshes, Roblox Materials, vertex color hex values, triangle counts, and where the two hand-off files were written.
 
 ---
 
@@ -366,8 +372,8 @@ Every object is a short list of parts, and every part is one of these types. A t
 | **Plate / slab** | Mounting plates, panels, signs, lids, boards, covers, flat backs | CRISP | `tk.slab` (plain prism or ONE flat chamfer) | Octagon or rectangle with equal-leg 45-degree corner cuts; 0.2-0.35 studs thick (or ~5-8% of its width); hard corners; wide and chunky; never rounded, never a superellipse |
 | **Block / body** | Boxes, cabinets, casings, chests, frames, seat masses | CRISP | `tk.chamfer_box` / `tk.plain_box` | One chamfer segment at most; large plain faces; 3-4 clear masses, not many small ones |
 | **Round body** | Vessels, bases, stems, stools, drums, bulbs, wheels, posts | CRISP | `tk.lathe(..., sides=8)` | 8-sided; profile turns of 45 or 90 degrees only; at most 2 stacked levels in a base; no shallow slopes |
-| **Bar / arm / post** | Straight or L-shaped supports, legs, handles, brackets, stems | CRISP | `tk.chamfer_box`, `tk.tube(..., sides=4 or 8)` | Chunky box or octagonal section, never a thin wire or a smooth tube; leaves its support at a clear right angle |
-| **Curved member** | Bent arms, rings, hoops, handles, hooks, arches | CRISP | `tk.turtle` + `tk.tube`, or `tk.arc` + `tk.tube` | Chain of straight segments with mitred, visible joints; every joint turns >= 30 degrees; <= 6 segments per half circle (Sec. 4.3) |
+| **Bar / arm / post** | Straight or L-shaped supports, arms, handles, brackets, fitting stems | CRISP | `tk.tube(..., sides=6)`; `tk.chamfer_box` only for blocky furniture posts | **Hexagonal cross-section** (Sec. 4.5), chunky, never a thin wire, a smooth tube, a square or an octagon; leaves its support at a clear angle |
+| **Curved member** | Bent arms, rings, hoops, handles, hooks, arches | CRISP | `tk.turtle` + `tk.tube(..., sides=6)`, or `tk.arc` + `tk.tube(..., sides=6)` | Hexagonal section; chain of straight segments with mitred, visible joints; every joint turns >= 30 degrees; <= 6 segments per half circle (Sec. 4.3) |
 | **Shell / bowl / cup / shade** | Open vessels, trays, cups, shades, hoods built from flat walls | CRISP | `tk.lathe` open shell (outer wall, rim, inner wall, rim; caps off) | 8-sided; walls at 45 degrees or steeper; thin flat rim; one wall thickness; glowing contents sit visibly inside |
 | **Dome** | The one smooth focal part (round cover, bulb, cloche) | SOFT (the budget) | `tk.lathe` + `smooth_tags` | 4-5 evenly spaced rings; neighbours crisp; declared in the spec with a reason; if unsure, make it a faceted shell instead |
 | **Stepped base / flange / foot** | What the object stands on or is capped by | CRISP | `tk.lathe`, `tk.chamfer_box` | At most 2 levels; short and wide; darker value; flat cap on knobs and feet |
@@ -376,15 +382,17 @@ Every object is a short list of parts, and every part is one of these types. A t
 | **Emitter** | Bulbs, flames, screens, glowing strips | CRISP (or SOFT if it is the focal dome) | faceted shape + `Neon` | Small, bright, warm, the single accent; sits inside or under its housing; add a light (Sec. 8.1); faceted, never a smooth sphere |
 | **Mark / face** | Dial marks, label shapes, bands, stripes, hands, buttons | CRISP | `tk.prism`, `tk.chamfer_box` | Flat or low-relief (3-6% of size); large; a separate color region; no engraving, text or micro-detail |
 | **Contents / fill** | What a container holds: soil, liquid, items, light | ORGANIC or CRISP | as the content type | If the container is open, its contents are visible and sit just below the rim; never an empty shell or a flat disc |
-| **Attachment** | Handle, latch, knob, lever, hook | CRISP | `tk.chamfer_box`, `tk.tube` | One per function; short, chunky, flat-capped; never ornamental |
+| **Wrap / strip** | Tape, straps, bands, stripes, labels, hoops: anything applied to the surface of a host part | CRISP | `tk.wrap_band` (box hosts), `tk.lathe` band rings (round hosts) | **Follows the host:** it is the host's own cross-section pushed out 1-3% (`t`), so it lies flat on each face and turns every corner on the host's single 45-degree chamfer face. It never floats, clips into the host, overhangs, flaps off an edge or sits as a flat sheet on top; check it with `tk.audit_clipping`. It starts and ends on a face (tape stops partway down a side) or closes into a full ring. Width >= 10% of the host. Its own edges are hard, no chamfer needed at 1-3% thickness. Separate color region |
+| **Attachment** | Handle, latch, knob, lever, hook | CRISP | `tk.chamfer_box`, `tk.tube(..., sides=6)` | One per function; short, chunky, flat-capped; never ornamental |
 
 **Universal construction rules**
 1. **Silhouette first.** Build the 2-4 largest masses, check the gray silhouette (Sec. 3.2), then add the smaller recognition features.
-2. **Joints are visible.** Where two parts meet (plate to arm, arm to head, body to lid) the meeting is a clear step or crease, never a blend. Parts overlap slightly so no gaps or floating pieces appear.
+2. **Joints are visible and clean.** Where two parts meet (plate to arm, arm to head, body to lid) the meeting is a clear step or crease, never a blend. Parts that join are buried into each other only as deep as a hidden joint needs (open end buried inside the host, never reaching the far side). Surface parts (strips, labels) sit FLUSH: no gap and no clipping. Nothing pokes through a surface; nothing floats.
 3. **Hierarchy of size.** One dominant mass, one or two secondary masses, small chunky details. Equal-sized parts look like a pile.
 4. **Symmetry for machined, asymmetry for hand-made.** Mirror pairs and sets; give hand-made parts different heights, leans and seeds.
 5. **Everything has thickness.** Rims, plates, walls and lips have visible thickness (about 3-8% of the object's size); no zero-thickness cards for solid things.
-6. **One decision per part.** A part has one tier, one Roblox Material and one Color3. If a part needs two, it is two parts.
+6. **Applied parts follow their host.** Anything that sits on another part's surface (tape, strap, band, stripe, label, trim line) copies the host's structure: same faces, same corner chamfer, tiny uniform offset. Build it from the host's own dimensions, never as an independent flat plane.
+7. **One decision per part.** A part has one tier, one Roblox Material and one flat vertex color. If a part needs two, it is two parts.
 
 ---
 
@@ -397,7 +405,7 @@ interpretation: ""         # one line: how you read the request (canonical form)
 biome: Mines | Manor | Office
 recognition_features: []   # 2-4 features that make it nameable in gray (Sec. 3.2)
 parts:                     # EVERY part, typed from the Sec. 11 grammar
-  - {name: "", type: plate | block | round_body | bar | curved_member | shell | dome | stepped_base | hand_made | organic | emitter | mark | contents | attachment, tier: crisp | hand_made | organic | soft, tool: "", note: ""}
+  - {name: "", type: plate | block | round_body | bar | curved_member | shell | dome | stepped_base | hand_made | organic | emitter | mark | wrap | contents | attachment, tier: crisp | hand_made | organic | soft, section: oct8 | hex6 | box4 | none, host: "", tool: "", note: ""}   # section: bars = hex6, round bodies = oct8; host: the part a wrap sits on
 simplicity_justification: ""   # what ornament was deliberately left out
 originality_note: ""       # how it differs from any reference/example it resembles
 style_rules_applied: []    # cite section numbers
@@ -425,7 +433,7 @@ materials:                       # one entry per color/material REGION = one mes
   - mesh: ""
     part_type: metal | wood | cloth | paper | plastic | wax | clay | foliage | soil | emissive
     roblox_material: ""          # Enum.Material name
-    color3_hex: "#......"
+    color_hex: "#......"        # flat vertex color baked into the FBX
 emissive: {has_emissive: false, color_hex: "", parts: [], light: {type: PointLight, range: 0, brightness: 0, color: "#......", shadows: false}}
 textures: none
 collision: {fidelity: Box | Hull | PreciseConvexDecomposition, proxy_parts: [], can_collide: true, anchored: true}
@@ -438,7 +446,7 @@ attributes: {Biome: "", Interactable: false}
 ## 13. Checklist (run honestly; list every failure)
 
 **Process**
-- [ ] First reply started with `Guide v15 read`; interpretation and `recognition_features` stated per object; spec with typed `parts:` approved before building.
+- [ ] First reply started with `Guide v18 read`; interpretation and `recognition_features` stated per object; spec with typed `parts:` approved before building.
 - [ ] Built from scratch with the toolkit; real `tk.stats()` triangle counts reported (0 degenerate triangles).
 - [ ] Reviewed in the Sec. 8.2 rig (Material Preview, not gray), including close-ups of corners and joints.
 - [ ] Studio hand-off written for every group (Sec. 9.6); mesh names final.
@@ -449,14 +457,17 @@ attributes: {Biome: "", Interactable: false}
 - [ ] Octagonal plans for round forms; flat edges have exactly 1-segment chamfers; base <= 2 levels; solid; overhang <= 5%.
 - [ ] **Crisp by default (Sec. 4.2):** every part is flat-shaded with hard corners except the declared soft part(s) (at most 1, max 2 with a reason); plates have real corners; arms/posts are box or 8-sided sections, not smooth tubes; no more than 8 sides; no bevel/subdivision/smooth/weighted-normal modifiers.
 - [ ] **Curves are facet chains (Sec. 4.3):** every bent member is a chain of straight segments with visible mitred joints, each joint >= 30 degrees, <= 6 segments per half circle.
+- [ ] **Cross-sections (Sec. 4.5):** round bodies are octagons; every arm, hook, handle and ring is a hexagon (`sides=6`); stated per part in the spec.
+- [ ] **Applied parts follow the host (Sec. 11, Wrap):** tape, straps, bands and stripes hug the host's faces and corner chamfers, do not float, overhang or hang off edges, and start and end on a face.
 - [ ] **Hand-made parts are wonky (Sec. 4.4):** lean, uneven taper, uneven top, irregular facets; machined parts are exact; copies differ.
 - [ ] **Audits clean:** `tk.audit_mesh` and `tk.audit_style` return no issues.
-- [ ] Containers show their contents; nothing floats; joints overlap slightly.
+- [ ] **No clipping, no gaps (double-checked):** orbited every object from 4+ sides and above, zoomed on every joint and strip; `tk.audit_clipping` clean (tape and other wraps clip by <= 0.004 studs; buried joints by their declared depth only); nothing pokes through a surface or floats.
+- [ ] Containers show their contents.
 - [ ] True relative scale kept in the review scene (Sec. 7); silhouette readable at 20 studs.
 - [ ] Same world, different object: not a copy of any reference or example.
 
 **Materials and color**
-- [ ] Roblox materials only: every mesh has ONE built-in `Enum.Material` + ONE `Color3`; no custom textures, `SurfaceAppearance`, `MaterialVariant` or baked colors.
+- [ ] Roblox materials only: every mesh has ONE flat vertex color (exported in the FBX) + ONE built-in `Enum.Material` (set in Studio); no custom textures, `SurfaceAppearance` or `MaterialVariant`; no painted/gradient vertex colors; `Col` color attribute present on every mesh.
 - [ ] Right Material on every part (Sec. 5 table); each color/material region is its own mesh.
 - [ ] Muted earthy colors, 2-3 value steps, <= 4 color regions, <= 1 accent; emissive only on light sources/interactables; no pure black/white.
 
@@ -486,10 +497,13 @@ import doors_examples as ex      # optional
 - `tk.lathe(m, profile, tag, sides=8, cx, cy, z0, cap_bottom, cap_top)`: 8-sided revolve of a `[(r, z), ...]` profile, r = half flat-to-flat. Open shells (shades, bowls, cups) as outer wall, rim, inner wall, rim with both caps off.
 - `tk.prism(m, poly, z0, z1, tag)`: extruded convex 2D polygon for flat chunky parts (hands, blades, label plates).
 - `tk.slab(m, poly, z0, z1, tag, c=0.0, both=False)`: CRISP plate from a convex polygon. `c=0` is a plain prism; `c>0` adds exactly one flat 45-degree chamfer on the front edge. `tk.inset_poly` offsets a polygon inward.
-- **Curves from facets (Sec. 4.3):** `tk.turtle(start, direction, axis, ops)` builds a bent path (`ops` = `("f", length)` and `("t", degrees)`); `tk.arc(center, radius, a0, a1, segs, plane)` builds a pure arc as a polyline; `tk.tube(m, pts, r, tag, sides=8, taper=1.0, cap_start=True, cap_end=True)` sweeps a chunky mitred bar along the points. Both path helpers warn if a turn is below 30 degrees.
+- **Curves from facets (Sec. 4.3):** `tk.turtle(start, direction, axis, ops)` builds a bent path (`ops` = `("f", length)` and `("t", degrees)`); `tk.arc(center, radius, a0, a1, segs, plane)` builds a pure arc as a polyline; `tk.tube(m, pts, r, tag, sides=6, taper=1.0, cap_start=True, cap_end=True)` sweeps a chunky mitred hexagonal bar along the points (use `sides=6` for arms, hooks, handles and rings; `sides=8` is for round bodies). Both path helpers warn if a turn is below 30 degrees.
+- **Clipping check:** `tk.audit_clipping(m, [("tape", "carton"), ("arm", "backplate")], eps=0.004)` flags any vertex of the first tag that sits inside the closed host tag by more than `eps` studs (the overlap you allow; raise it only for a deliberately buried joint).
+- **Applied strips (Sec. 11):** `tk.wrap_band(m, lo, hi, c, axis, pos, width, t, tag, edges=None, reach=1.0)` builds tape, straps and bands that hug a `chamfer_box` host. `edges` picks a run of the host's cross-section edges (e.g. `[2,3,4,5,6]` = over the top and down both sides), `reach` stops the strip partway down the side faces, `t` is the 1-3% offset.
 - **Hand-made irregularity (Sec. 4.4):** `tk.wonky(m, tags, lean, taper, jitter, top_tilt, seed)` edits vertices in place. Only for hand-made parts.
 - `tk.audit_mesh(m, soft_tags, organic_tags)`: pure-geometry check for accidental rounding and too-gentle curve joints (Sec. 4.2). `tk.audit_style(parts, soft_tags)` (Blender) checks shading and modifiers. `tk.export_fbx(path, group)` exports with face smoothing.
-- `tk.to_blender(name, mesh, palette, location, smooth_tags)`: one Blender object per tag (named `<Name>_<Tag>` in PascalCase), grouped under an Empty, flat preview colors, custom properties `roblox_material` and `roblox_color`. `palette` is `{tag: (hex, "RobloxMaterial")}`; you define it per object (Sec. 5).
+- `tk.to_blender(name, mesh, palette, location, smooth_tags)`: one Blender object per tag (named `<Name>_<Tag>` in PascalCase), grouped under an Empty, flat preview material and flat vertex color attribute `Col` (the color that travels in the FBX), custom properties `roblox_material` and `roblox_color`. `palette` is `{tag: (hex, "RobloxMaterial")}`; you define it per object (Sec. 5).
+- `tk.export_fbx(path, group, colors_type="SRGB")` exports with the vertex colors; if the colors look too dark or too light in Studio, re-export with `colors_type="LINEAR"`.
 - `tk.setup_review_rig`, `tk.luau_apply_script`, `tk.handoff_manifest`, `tk.write_handoff`.
 - Geometry helpers need no Blender (testable anywhere); the Blender glue needs `bpy`.
 
