@@ -164,6 +164,25 @@ recording (`ChangeHistoryService:TryBeginRecording`):
       - worst visible joint about 45°.
       Build the test room with Levels.build(2) at y 600, and pin the camera
       with a RenderStep bound after Camera.client.
+- `ServerStorage.FactoryRoomEditor.Rooms`: floor 1's room templates
+  (FoundryLevel). Each is placed by its `Origin` attribute, not its pivot, so a
+  replacement model must sit with its floor centre on `Origin`, doorways where
+  `Proto`'s sockets say. A replaced PipeGallery left at (-440, 0, 0) was built
+  ~4700 studs from its doorways, so the section stopped connecting.
+  `workspace.FactoryRoomEditCopies` holds modelling copies on their own grid
+  (pivot = floor centre), stashed to ServerStorage at runtime and never read.
+  To promote one, clone it, shift it by `Origin` minus its pivot's XZ, and
+  replace the template. Props left loose in Workspace (the PipeGallery's
+  floor-grate trench once) never reach the map: parent them into the copy first.
+  - `PipeGallery.MezzanineOffice` (edit copy only until promoted): a site
+    office on a truss-hung deck spanning the void between the two catwalks
+    (x -459.85..-420.15, z 8..40, deck top y 18.1 flush with the catwalks).
+    Built from Parts; the joists dodge the catwalk columns at z 11.4, 12.8,
+    23.4 and 37. Entry is a gap cut in the east catwalk `Railing` (z 20.13..24).
+    Its doors are `SwingDoor`s. Furniture under `Greybox` is placeholder blocks,
+    kept empty on purpose. The two Blender fixtures (`assets/mezzanine_office/`)
+    replace `BlenderPlaceholders` parts: their apply scripts read each
+    placeholder's `Mount` CFrame and take over its lights.
 - `Elevator.FloorSelector`: the floor-selector pedestal, saved in its *raised*
   pose. It vanished from the place once and had to be rebuilt; if it's
   missing, Elevator.server hangs on `WaitForChild` and the elevator stops
@@ -297,7 +316,53 @@ rebuilt from transcript data.
   (`dtk.py` stands in for the guide's missing `doors_toolkit.py`). Blender front
   is -Y, which becomes Roblox -Z. `assets/factory_fbx/` holds copies of all of
   them for one mass import.
-  - Moving parts can't be baked into the mesh. `workspace.FuelTank.Gauges` (an
+  - The couch (`assets/couch/`, `factory_props_src/couch.py`) follows the
+    v24 `doors-asset-guide` skill and uses `assets/WallLights/doors_toolkit.py`,
+    not `dtk.py`. It replaced the v23 couch and two older ones, which the owner
+    had deleted; don't bring back a `Sofa`. Following v24, its 8 meshes (one per
+    value region) are coloured by `Part.Color` (`write_handoff(part_color=True)`;
+    the FBX has no vertex colour). The meshes don't collide: the apply script
+    adds invisible `COL_` boxes and reads the back's side off `Couch_Pillows`.
+    - The floor grate (`assets/floor_grate/`, `factory_props_src/floor_grate.py`) is
+    pivoted at the bottom of its pit. Sink it 3 studs so the deck is flush with the
+    floor (the corner blocks stand 0.06 proud); only its `COL_Deck` collides. Its
+    diagonal lattice is cut with an exact boolean, so rebuild it from the script.
+    `FloorGrateOpenL` / `OpenR` / `OpenLR` are the same tile with the left (-X), right or both
+    ends open; laid 11.5 studs apart along X with the same rotation they form one trench
+    (OpenR, OpenLR..., OpenL). The lattice pitch is tied to that width (12 repeats per tile),
+    so change `OUTER` and the pattern follows, but don't set `LAT_PITCH` by hand.
+  - The heat exchanger (`assets/heat_exchanger/`, `factory_props_src/heat_exchanger.py`)
+    is built the same way (v24, Part.Color, `COL_` boxes). Its length runs along X.
+  - So is the flowerpot (`assets/flowerpot/`, `factory_props_src/flowerpot.py`): a brown pot
+    with a snake-plant fan, leaves seeded by `SEED`. Only its `COL_Pot` box collides.
+    `FlowerpotBush` (`assets/flowerpot_bush/`, `factory_props_src/flowerpot_bush.py`) is the
+    same pot (`flowerpot.pot()`) holding a mini tree: a short hex stick under one tall, dark green,
+    low-poly canopy with crisp flat facets, wide at the base and tapering to a round top. The owner
+    wants no individual leaves, and rejected a leafy bush, a full-height leaf column, a ragged
+    canopy and a smooth-shaded one.
+  - The office set (`assets/office_furniture/`, `factory_props_src/office_furniture.py`, one module
+    for all of them): FilingCabinet, OfficeChair, OfficeDesk, Whiteboard, OfficeCounter,
+    CoffeeMachine, sized to the MezzanineOffice `Greybox` blocks they're meant to replace, plus
+    TubeLight (twin fluorescent ceiling fitting, pivot top centre, adds a PointLight and a shadowed
+    SpotLight) and WallSpeaker (pivot back centre; its grille bulges out as a dome, as the owner
+    asked). Same v24 method. The
+    owner wants each filing-cabinet drawer to be its own part: every drawer is a hollow tray mesh with
+    its own pull, and the apply script groups them as `Drawer1`..`Drawer4` (top down) to slide out
+    along -Z. The chair matches the owner's armless task-chair photo: plain blue seat and back pads,
+    nothing grey around them. They rejected a waiting-seat version (pale bezel, armrests, thick
+    framed seat) as "very bad", and twice found the seat too big next to the back: it's now no
+    wider than the back pad. The whiteboard's uprights and crossbar are hex tubes, by request. The
+    counter's door pulls sit on a wide stile beside the raised panel, never across its bevel. The
+    desk's metal is grey to match the chair; its knee space fits the chair. The
+    whiteboard stays plain white (no markings, by request).
+  - The transformer (`assets/transformer/`, `factory_props_src/transformer.py`, reusing the office
+    module's helpers) is a factory prop: an oil-filled transformer inside a chain-link cage (an array
+    of crossing bars, most of its ~6,500 tris), with a high-voltage sign on the front (-Z). The owner
+    adds the sign's words in Roblox on the blank `Transformer_SignBand`; don't generate them. The
+    front-right bay is a staff maintenance gate: the apply script makes it a `SwingDoor`
+    (`MaintenanceGate` with one `Leaf` hinged on the corner post), so it swings for players and its
+    bay has no `COL_` wall and no bottom rail.
+- Moving parts can't be baked into the mesh. `workspace.FuelTank.Gauges` (an
     Atomic-streaming Model, so its client script never runs before its parts
     arrive) covers each baked needle with a `Face` disc and swings a separate
     `Needle` from its `FacePivot` (relative to the `Face`) / `Offset` attributes (`GaugeNeedles`, a Script

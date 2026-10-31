@@ -438,8 +438,11 @@ def export_fbx(path, group, colors_type="SRGB"):
 	return path
 
 
-def luau_apply_script(group_name, parts, light=None, attributes=None):
-	rows = "\n".join(f'\t["{o.name}"] = {{ Enum.Material.{o["roblox_material"]}, Color3.new(1, 1, 1) }},'
+def luau_apply_script(group_name, parts, light=None, attributes=None, part_color=False):
+	"""part_color: colour each MeshPart from its palette hex (guide v24, FBX exported without
+	vertex colour) instead of white over baked vertex colours."""
+	color = (lambda o: f'Color3.fromHex("{o["roblox_color"]}")') if part_color else (lambda o: "Color3.new(1, 1, 1)")
+	rows = "\n".join(f'\t["{o.name}"] = {{ Enum.Material.{o["roblox_material"]}, {color(o)} }},'
 					 for o in parts)
 	light_code = ""
 	if light:
@@ -455,8 +458,11 @@ def luau_apply_script(group_name, parts, light=None, attributes=None):
 						for k, v in (attributes or {}).items())
 	return (
 		f"-- {group_name}: run in the Studio command bar with the imported model selected.\n"
-		"-- Sets each MeshPart's built-in Material and a white Color (the FBX vertex colours show\n"
-		"-- through), anchors it as non-colliding dressing and adds the fixture's light.\n"
+		+ ("-- Sets each MeshPart's built-in Material and its region's Color, anchors it as\n"
+		   "-- non-colliding dressing and adds the fixture's light.\n"
+		   if part_color else
+		   "-- Sets each MeshPart's built-in Material and a white Color (the FBX vertex colours show\n"
+		   "-- through), anchors it as non-colliding dressing and adds the fixture's light.\n") +
 		"local map = {\n" + rows + "\n}\n"
 		'for _, root in game:GetService("Selection"):Get() do\n'
 		"\tlocal parts = root:GetDescendants()\n"
@@ -478,8 +484,9 @@ def luau_apply_script(group_name, parts, light=None, attributes=None):
 	)
 
 
-def handoff_manifest(group_name, parts, note=""):
-	rows = ["| Mesh name (must match in Studio) | Roblox Material | Vertex colour | Tris |", "|---|---|---|---|"]
+def handoff_manifest(group_name, parts, note="", part_color=False):
+	head = "Part.Color" if part_color else "Vertex colour"
+	rows = [f"| Mesh name (must match in Studio) | Roblox Material | {head} | Tris |", "|---|---|---|---|"]
 	total = 0
 	for o in parts:
 		n = len(o.data.polygons)
@@ -488,11 +495,11 @@ def handoff_manifest(group_name, parts, note=""):
 	return f"# Studio hand-off: {group_name}\n\n" + "\n".join(rows) + f"\n\nTotal: {total} tris. {note}\n"
 
 
-def write_handoff(folder, group_name, parts, light=None, attributes=None, note=""):
+def write_handoff(folder, group_name, parts, light=None, attributes=None, note="", part_color=False):
 	lp = os.path.join(folder, f"{group_name}_apply_materials.luau")
 	mp = os.path.join(folder, f"{group_name}_manifest.md")
 	with open(lp, "w") as f:
-		f.write(luau_apply_script(group_name, parts, light, attributes))
+		f.write(luau_apply_script(group_name, parts, light, attributes, part_color))
 	with open(mp, "w") as f:
-		f.write(handoff_manifest(group_name, parts, note))
+		f.write(handoff_manifest(group_name, parts, note, part_color))
 	return lp, mp
