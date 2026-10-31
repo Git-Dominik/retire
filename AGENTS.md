@@ -68,102 +68,63 @@ recording (`ChangeHistoryService:TryBeginRecording`):
   `SwingTime` / `Partner` attributes.
 - `ServerStorage.WallShop`: floor 2's shop in a hole in the back wall. Levels
   cuts the hole from its `OpeningSize` attribute and clones it in on each visit.
-  - It's pivoted at the bottom centre of the opening, on the wall's room face,
-    with its front (-Z) facing the room.
-  - The owner is decorating the shop by hand, so leave its dressing alone.
-    The shopkeeper entity is `Eyes` plus `Tentacles`.
-  - WallShop.client animates the shopkeeper:
-    - `Eyes` (tag `ShopEyes`) is saved hidden. The owner chose a cluster of
-      mismatched eyes over two big ones: `Eye1`..`Eye7` models (`Size`
-      attribute) around a `Root` that carries the Glow light.
-      - The cluster opens within 22 studs and shuts past 26. The eyes open
-        one after another (middle first), and each blinks and glances on its
-        own: mostly at the player, sometimes anywhere. The pupils shrink as
-        the player comes closer.
-      - Each eye's parts are found by name: `Pupil` (attributes `Look`,
-        `Pupil`), `Iris` (`Look`), `Sclera`, `Halo`. `Look` parts slide across
-        the eye to glance. The client keeps each saved mesh scale and
-        multiplies blinks and pupil size on top.
-    - `Effects` (tag `ShopEffects`) holds the `Mist`, `Dust` (`DustCloud`
-      and `DustGrit`) and `Motes` emitters, saved off. The client switches
-      them on while the shop is open, and an emitter's `Burst` attribute
-      puffs out that many particles as it opens.
-      - The dust only reads on the dark floor because it's partly self-lit
-        (LightInfluence about 0.3).
-      - While the player is close, the client also adds a local `ShopDread`
-        ColorCorrection to Lighting, which desaturates and darkens the room.
-    - Sounds are made by WallShop.client and play locally. The IDs are in its
-      config, all checked as loading in this place:
-      - two muffled loops (an EqualizerSoundEffect cuts the highs) that fade
-        with the shop: the ambience bed 9114244977, slowed, and the swell
-        9043337370, restarted from its start each time the eyes open;
-      - breathing now and then: 9113983944, 9113984054 and 9113984056.
-      The owner liked the ambience and asked for it looped and more muffled.
-      They called the tentacle squirm and slap sounds "very bad", so the
-      tentacles stay silent. TentacleRig.update still returns its "emerge"
-      and "grip" events, unused.
-    - `Tentacles` holds three copies (`Left`, `Right`, `Top`, tag
-      `ShopTentacles`) of the free "Animated tentacles" rig (135280093987265).
-      Each copy has 10 bone chains under one `RootPart`. Each copy's knot sits
-      behind the wall beside or above the hole, so the tentacles reach in from
-      the dark edges, never out of the eyes.
-    - Shared.TentacleRig poses them. Its header documents the per-chain
-      attributes: `Mode` (`Grip` / `Reach` / `Hidden`), `Way1`..`WayN`,
-      `HookNormal`, `Sway`, `Speed` and `Phase`.
-    - Five tentacles show, deliberately lopsided because the owner found a
-      symmetric layout too perfect:
-      - two on the left: one rising high, one sloping low;
-      - one on the right at mid height;
-      - two over the header, off-centre (x -3.1 and +1.4).
-      The owner removed the two floor crawlers and found more tentacles too
-      busy. The small chains are `Hidden`: from the knots they can't reach
-      past the rim.
-    - Each visible chain's `Length` attribute is its route length plus about 5.5
-      studs (4.5 on top). Only that much comes out; the rest stays drawn back
-      behind the wall. If you change a route, reset its `Length`.
-    - The side routes stop in front of the post and the tip carries on onto the
-      wall. The top routes start just behind the wall above the hole.
-    - The lower-left route is level (y about 3.7). Sloping down, its long tip dug
-      into the floor.
-    - Bones follow the leader along a smoothed curve, so no joint can fold
-      back. Aiming each bone at a point a fixed distance along the route
-      zigzagged, with 150° joints. Per-bone temporal smoothing made it worse;
-      don't add it back.
-    - The tip is whatever comes out past the route's end, now about 5 studs.
-      It sweeps across slowly, curling one way, holding, then curling the
-      other. The curl is capped so the end swings at most `TipSwing` (1.2
-      studs) to each side, so long horns don't fling into each other.
-    - The owner wants neighbours to move in different directions, so give
-      each tentacle its own `Phase` and `Speed`, never a shared one. Tips curl
-      about 1.7 studs to each side, so neighbours on the same wall need routes
-      at least 4.5 studs apart.
-    - The owner found slow emergence "way too slow" twice. Now a tentacle
-      skips the hidden stretch of its route, appears at the hole within about
-      0.4 s, and settles in about 1 s (CreepSpeed 11).
-    - Each tentacle's hidden run-on is bent into the wall, along its route's
-      backward direction plus the wall's depth. One that pointed slightly
-      into the room left a withdrawn tentacle visible under the ceiling.
-    - Emerging: the rig creeps each tentacle out at its own pace (`open` comes
-      from the eyes' `wanted` flag, not their fade), staggered by `Phase`.
-      The part not yet out lies straight back along the route's run-on: the
-      root bone slides back that far, behind the wall.
-      - A hidden fold-back loop made the chain skip across it, and the tips
-        lunged into the room.
-      - Moving a root stretches the knot's shared skin into spikes. That's
-        only acceptable because it happens behind the wall, so never move a
-        root while its tentacle is out.
-    - Keep waypoints in front of the frame at z -1.45 or less. Closer, the
-      tentacles cut into the posts and header.
-    - Start each route with a waypoint inside the void, about 1.5 studs
-      behind the hole. Without it, the curve cuts through the wall's corner.
-      The top routes drop below the lintel (y 8.3) before coming out.
-    - Check changes in a playtest over a full sweep cycle (~16 s), sampling
-      bones from the client:
-      - no bone inside the wall, posts, header, lintel or ceiling;
-      - no two chains closer than 1.2 studs;
-      - worst visible joint about 45°.
-      Build the test room with Levels.build(2) at y 600, and pin the camera
-      with a RenderStep bound after Camera.client.
+  Pivoted at the bottom centre of the opening, on the wall's room face, front
+  (-Z) facing the room. The owner decorates it by hand: leave the dressing
+  alone. The shopkeeper is `Eyes` plus `Tentacles`, animated by WallShop.client.
+  - `Eyes` (tag `ShopEyes`, saved hidden): `Eye1`..`Eye7` models (`Size`
+    attribute) around a `Root` carrying the Glow light. The cluster opens within
+    22 studs and shuts past 26; eyes open middle-first, each blinks and glances
+    on its own, and the pupils shrink as the player nears. Parts are found by
+    name: `Pupil` (`Look`, `Pupil`), `Iris` (`Look`), `Sclera`, `Halo`; `Look`
+    parts slide to glance. The client keeps each saved mesh scale and
+    multiplies blinks and pupil size on top.
+  - `Effects` (tag `ShopEffects`): `Mist`, `Dust` (`DustCloud`, `DustGrit`) and
+    `Motes` emitters, saved off. The client enables them while the shop is open;
+    an emitter's `Burst` attribute puffs out that many particles on opening.
+    Dust is partly self-lit (LightInfluence ~0.3) or it doesn't read on the dark
+    floor. Close up, the client adds a local `ShopDread` ColorCorrection.
+  - Sounds play locally; IDs are in WallShop.client's config (all verified
+    loading): two muffled loops that fade with the shop (the swell restarts each
+    time the eyes open) and occasional breathing. The owner called the tentacle
+    squirm and slap sounds "very bad", so tentacles stay silent
+    (TentacleRig.update still returns unused "emerge"/"grip" events).
+  - `Tentacles`: three copies (`Left`, `Right`, `Top`, tag `ShopTentacles`) of
+    the free "Animated tentacles" rig (135280093987265), 10 bone chains each
+    under one `RootPart`. Each knot sits behind the wall beside or above the
+    hole, so tentacles reach in from the dark edges, never out of the eyes.
+    Shared.TentacleRig poses them; its header documents the per-chain
+    attributes (`Mode` Grip/Reach/Hidden, `Way1`..`WayN`, `HookNormal`, `Sway`,
+    `Speed`, `Phase`).
+  - Layout: five visible tentacles, deliberately lopsided (symmetry looked too
+    perfect, more was too busy, and the owner removed the floor crawlers): two
+    left (one high, one low and level at y ~3.7; sloping down dug into the
+    floor), one right at mid height, two over the header (x -3.1 and +1.4).
+    The small chains are `Hidden`.
+  - Routes: a chain's `Length` is its route length plus ~5.5 studs (4.5 on top);
+    reset it when you change a route. Keep waypoints at z -1.45 or less in front
+    of the frame, or they cut the posts and header. Start each route with a
+    waypoint ~1.5 studs behind the hole, inside the void, or the curve cuts the
+    wall's corner; top routes drop below the lintel (y 8.3) before coming out.
+    Side routes stop in front of the post and the tip carries onto the wall.
+  - Motion: bones follow the leader along a smoothed curve so no joint folds
+    back. Aiming each bone at a fixed distance along the route zigzagged, and
+    per-bone temporal smoothing made it worse; don't add either. The tip sweeps
+    slowly, capped at `TipSwing` (1.2 studs) each side. The owner wants
+    neighbours moving differently: give each its own `Phase` and `Speed`, and
+    keep neighbours on one wall at least 4.5 studs apart.
+  - Emerging: `open` comes from the eyes' `wanted` flag. The owner found slow
+    emergence "way too slow" twice: a tentacle skips the hidden stretch, shows
+    at the hole in ~0.4 s and settles in ~1 s (CreepSpeed 11), staggered by
+    `Phase`. The part not yet out lies straight back along the route's run-on
+    (the root bone slides back behind the wall); the run-on bends into the wall
+    (backward plus wall depth), or a withdrawn tentacle shows under the ceiling.
+    Never move a root while its tentacle is out (it stretches the shared skin
+    into spikes), and avoid hidden fold-back loops (tips lunge into the room).
+  - Check changes in a playtest over a full sweep (~16 s), sampling bones from
+    the client: none inside the wall, posts, header, lintel or ceiling; no two
+    chains closer than 1.2 studs; worst visible joint ~45°. Build the test room
+    with Levels.build(2) at y 600 and pin the camera with a RenderStep bound
+    after Camera.client.
 - `ServerStorage.FactoryRoomEditor.Rooms`: floor 1's room templates
   (FoundryLevel). Each is placed by its `Origin` attribute, not its pivot, so a
   replacement model must sit with its floor centre on `Origin`, doorways where
@@ -184,27 +145,22 @@ recording (`ChangeHistoryService:TryBeginRecording`):
     replace `BlenderPlaceholders` parts: their apply scripts read each
     placeholder's `Mount` CFrame and take over its lights.
 - `Elevator.FloorSelector`: the floor-selector pedestal, saved in its *raised*
-  pose. It vanished from the place once and had to be rebuilt; if it's
-  missing, Elevator.server hangs on `WaitForChild` and the elevator stops
-  working. Never give another model the name `Elevator`; scripts look it up with
-  `WaitForChild("Elevator")`.
+  pose. If it's missing, Elevator.server hangs on `WaitForChild`. Never give
+  another model the name `Elevator`; scripts look it up by that name.
 - `Elevator.ShaftWindow`: an invisible slab in the doorway between the iron
   gate and the wooden doors, front face into the car. ElevatorShaft.client
   runs the shaft wall through it during a ride.
 - `Elevator.Doors`: the wooden leaves (`DoorLeft*` / `DoorRight*`, saved
   open, with `ClosedOffset` on the core part) run inside the car's front wall
-  and slide into it when open. Keep them there: the storage room's back wall
-  moved once and left them standing out in the room.
+  and slide into it when open. Keep them there.
 
 - The store: an `AmbienceZone` part (StoreAmbience.client), the `StoreRadio`
   on the Service Counter (Radio.server), and the `CargoCrate` / `CargoDrop`
   beside the freight door.
   - Collaborators move the store, so don't hardcode its position.
-    - Its back wall still has to line up with the elevator, which never moves:
-      the `ElevatorEntrance` centred on the car doorway (x -11.9) and the
-      store's back wall in front of the car's front face (z -54.6). Moving the
-      store 1.7 studs towards the elevator once pushed its wall through the
-      car, hid the call panel and put the doors off-centre.
+    - Its back wall must still line up with the elevator, which never moves:
+      `ElevatorEntrance` centred on the car doorway (x -11.9), the wall in front
+      of the car's front face (z -54.6).
   - A decorative model named `Radio` also exists, so never look the radio up
     by that name.
   - `DoorTrigger`: an invisible part in the street doorway (east wall).
@@ -224,10 +180,8 @@ recording (`ChangeHistoryService:TryBeginRecording`):
     - Large (`LargeShelf_1/2`): three decks named `Deck`, so StockRacks never
       takes them for plain boards, and four 2.25-stud `StockSlot`s, two per
       deck, for items up to 2×2.
-    - The `Hole` parts are non-colliding and non-queryable.
-    - Decks, beams and the posts' outer heels are chamfered (`_Strip` /
-      `_Bevel`). A `Shelf` core must stay thicker than 0.08 studs, or
-      StockRacks takes it for a front lip and stocks no small items there.
+    - A `Shelf` core must stay thicker than 0.08 studs, or StockRacks takes it
+      for a front lip and stocks no small items there.
   - `ElevatorRoom.Decor`: Creator Store props in the storage room (box
     stacks, hand truck, step ladder, mop bucket, clipboard), scripts
     stripped, all anchored. Keep them clear of the racks' fronts.
@@ -251,8 +205,7 @@ recording (`ChangeHistoryService:TryBeginRecording`):
     Elevator.server finds by name, so keep those names.
 
 Before deleting or rebuilding anything in the place, look at what's there.
-Parts have gone missing before (the employee-room window wall) and had to be
-rebuilt from transcript data.
+Parts have gone missing before and had to be rebuilt.
 
 ## Studio workflow
 
@@ -290,83 +243,60 @@ rebuilt from transcript data.
     at it, line of sight clear).
   - Shoplifters will take test stock you leave on shop furniture.
   - Always close an undo recording, even when the edit fails: run the body in
-    `pcall`, then `FinishRecording` (Commit, or Cancel on error).
-    - A script that errored between `TryBeginRecording` and `FinishRecording`
-      once left a recording open. Every later `TryBeginRecording` then
-      returned nil, so those edits made no undo steps and all sat inside the
-      orphan. One undo rolled them all back: the wall shop "reset" to an old
-      version, and its client script lost its rename.
-    - Check with `ChangeHistoryService:IsRecordingInProgress()`. An orphan
-      can't be finished without its ID, which is gone, so restart Studio to
-      clear it.
-    - `assets/WallShop.rbxm` is a backup of the wall shop template from
-      then.
+    `pcall`, then `FinishRecording` (Commit, or Cancel on error). An orphaned
+    recording makes every later `TryBeginRecording` return nil and one undo
+    rolls everything back (it once reset the wall shop). Check
+    `ChangeHistoryService:IsRecordingInProgress()`; only restarting Studio clears
+    an orphan. `assets/WallShop.rbxm` is a backup of the wall shop template.
   - `solo_playtest` start needs `mode: "play"`. Without it the call fails
     with a bare "Unknown error".
   - While a playtest runs, `capture_screenshot` captures the play view, not
     the edit viewport.
-  - The playtest server can restart on its own. If world state "vanishes",
-    check uptime before calling it a bug.
+  - The playtest server can restart on its own; check uptime if state "vanishes".
 - MCP can't get new meshes into Studio: `upload_asset` fails on FBX Models,
   `AssetService:CreateAssetAsync` reports "not available yet", and there's no
   scriptable 3D importer. The owner imports each FBX by hand (File → Import 3D);
   placement and materials can then be scripted.
 - Blender-built props live in `assets/<name>/` (FBX, `_apply_materials.luau`,
-  `_manifest.md`), and their build scripts are in `assets/factory_props_src`
-  (`dtk.py` stands in for the guide's missing `doors_toolkit.py`). Blender front
-  is -Y, which becomes Roblox -Z. `assets/factory_fbx/` holds copies of all of
-  them for one mass import.
-  - The couch (`assets/couch/`, `factory_props_src/couch.py`) follows the
-    v24 `doors-asset-guide` skill and uses `assets/WallLights/doors_toolkit.py`,
-    not `dtk.py`. It replaced the v23 couch and two older ones, which the owner
-    had deleted; don't bring back a `Sofa`. Following v24, its 8 meshes (one per
-    value region) are coloured by `Part.Color` (`write_handoff(part_color=True)`;
-    the FBX has no vertex colour). The meshes don't collide: the apply script
-    adds invisible `COL_` boxes and reads the back's side off `Couch_Pillows`.
-    - The floor grate (`assets/floor_grate/`, `factory_props_src/floor_grate.py`) is
-    pivoted at the bottom of its pit. Sink it 3 studs so the deck is flush with the
-    floor (the corner blocks stand 0.06 proud); only its `COL_Deck` collides. Its
-    diagonal lattice is cut with an exact boolean, so rebuild it from the script.
-    `FloorGrateOpenL` / `OpenR` / `OpenLR` are the same tile with the left (-X), right or both
-    ends open; laid 11.5 studs apart along X with the same rotation they form one trench
-    (OpenR, OpenLR..., OpenL). The lattice pitch is tied to that width (12 repeats per tile),
-    so change `OUTER` and the pattern follows, but don't set `LAT_PITCH` by hand.
-  - The heat exchanger (`assets/heat_exchanger/`, `factory_props_src/heat_exchanger.py`)
-    is built the same way (v24, Part.Color, `COL_` boxes). Its length runs along X.
-  - So is the flowerpot (`assets/flowerpot/`, `factory_props_src/flowerpot.py`): a brown pot
-    with a snake-plant fan, leaves seeded by `SEED`. Only its `COL_Pot` box collides.
-    `FlowerpotBush` (`assets/flowerpot_bush/`, `factory_props_src/flowerpot_bush.py`) is the
-    same pot (`flowerpot.pot()`) holding a mini tree: a short hex stick under one tall, dark green,
-    low-poly canopy with crisp flat facets, wide at the base and tapering to a round top. The owner
-    wants no individual leaves, and rejected a leafy bush, a full-height leaf column, a ragged
-    canopy and a smooth-shaded one.
-  - The office set (`assets/office_furniture/`, `factory_props_src/office_furniture.py`, one module
-    for all of them): FilingCabinet, OfficeChair, OfficeDesk, Whiteboard, OfficeCounter,
-    CoffeeMachine, sized to the MezzanineOffice `Greybox` blocks they're meant to replace, plus
-    TubeLight (twin fluorescent ceiling fitting, pivot top centre, adds a PointLight and a shadowed
-    SpotLight) and WallSpeaker (pivot back centre; its grille bulges out as a dome, as the owner
-    asked). Same v24 method. The
-    owner wants each filing-cabinet drawer to be its own part: every drawer is a hollow tray mesh with
-    its own pull, and the apply script groups them as `Drawer1`..`Drawer4` (top down) to slide out
-    along -Z. The chair matches the owner's armless task-chair photo: plain blue seat and back pads,
-    nothing grey around them. They rejected a waiting-seat version (pale bezel, armrests, thick
-    framed seat) as "very bad", and twice found the seat too big next to the back: it's now no
-    wider than the back pad. The whiteboard's uprights and crossbar are hex tubes, by request. The
-    counter's door pulls sit on a wide stile beside the raised panel, never across its bevel. The
-    desk's metal is grey to match the chair; its knee space fits the chair. The
-    whiteboard stays plain white (no markings, by request).
-  - The transformer (`assets/transformer/`, `factory_props_src/transformer.py`, reusing the office
-    module's helpers) is a factory prop: an oil-filled transformer inside a chain-link cage (an array
-    of crossing bars, most of its ~6,500 tris), with a high-voltage sign on the front (-Z). The owner
-    adds the sign's words in Roblox on the blank `Transformer_SignBand`; don't generate them. The
-    front-right bay is a staff maintenance gate: the apply script makes it a `SwingDoor`
-    (`MaintenanceGate` with one `Leaf` hinged on the corner post), so it swings for players and its
-    bay has no `COL_` wall and no bottom rail.
+  `_manifest.md`); build scripts are in `assets/factory_props_src`. Blender front
+  is -Y, which becomes Roblox -Z. `assets/factory_fbx/` holds copies of all FBXs
+  for one mass import. The shared Blender helpers are in
+  `assets/WallLights/doors_toolkit.py`.
+  - Couch: 8 meshes, one per value region. The apply script reads the back's side
+    off `Couch_Pillows`. It replaced older couches the owner deleted; don't bring
+    back a `Sofa`.
+  - Floor grate: pivoted at the bottom of its pit; sink it 3 studs so the deck is
+    flush (corner blocks stand 0.06 proud); only `COL_Deck` collides. The lattice
+    is an exact boolean, so rebuild from the script. `FloorGrateOpenL` / `OpenR` /
+    `OpenLR` are the same tile with the -X, +X or both ends open; laid 11.5 studs
+    apart along X they form one trench. The lattice pitch is tied to the tile
+    width: change `OUTER`, never `LAT_PITCH`.
+  - Heat exchanger: length runs along X.
+  - Flowerpot (seeded by `SEED`) and `FlowerpotBush` (same pot,
+    `flowerpot.pot()`): the bush is one tall, dark green, low-poly canopy with
+    crisp flat facets, wide at the base tapering to a round top, on a short hex
+    stick. The owner wants no individual leaves and rejected a leafy bush, a
+    full-height leaf column, a ragged canopy and a smooth-shaded one.
+  - Office set (one module, `office_furniture.py`): FilingCabinet, OfficeChair,
+    OfficeDesk, Whiteboard, OfficeCounter, CoffeeMachine, sized to the
+    MezzanineOffice `Greybox` blocks, plus TubeLight (pivot top centre; adds a
+    PointLight and shadowed SpotLight) and WallSpeaker (pivot back centre, domed
+    grille by request). Owner requirements: each cabinet drawer is its own part
+    (`Drawer1`..`Drawer4` top down, sliding along -Z); the chair is armless with
+    plain blue seat and back pads and nothing grey around them, the seat no
+    wider than the back pad (a waiting-seat version was "very bad"); whiteboard
+    uprights and crossbar are hex tubes and the board stays plain white; counter
+    pulls sit on a wide stile, never across a bevel; the desk's metal is grey and
+    its knee space fits the chair.
+  - Transformer (reuses the office helpers): an oil-filled transformer in a
+    chain-link cage (most of its ~6,500 tris), high-voltage sign on the front
+    (-Z). The owner adds the sign's words on the blank `Transformer_SignBand`;
+    don't generate them. The front-right bay is a `SwingDoor` (`MaintenanceGate`,
+    one `Leaf` hinged on the corner post), so it has no `COL_` wall or bottom rail.
 - Moving parts can't be baked into the mesh. `workspace.FuelTank.Gauges` (an
-    Atomic-streaming Model, so its client script never runs before its parts
-    arrive) covers each baked needle with a `Face` disc and swings a separate
-    `Needle` from its `FacePivot` (relative to the `Face`) / `Offset` attributes (`GaugeNeedles`, a Script
-    with RunContext Client). It's place-only, not in `src`.
+  Atomic-streaming Model) covers each baked needle with a `Face` disc and swings
+  a separate `Needle` from its `FacePivot` / `Offset` attributes (`GaugeNeedles`,
+  a client-context Script). Place-only, not in `src`.
 - The owner tests with a regular R15 character. Calibrate arm and grip
   numbers against that rig.
 - `workspace.StreamingEnabled` is on. Clients may not have far-away parts, so
@@ -384,13 +314,10 @@ rebuilt from transcript data.
     shows if `RequiresLineOfSight` is true (the call plate's `ButtonRing`
     blocks its ray, as does the selector pedestal). Prompt scripts set it to
     `false` on purpose.
-    - Camera.client once forced `true` on every prompt in the workspace. That
-      hid the journal, call plate, floor selector, elevator chairs, bell and
-      Send up button. It now applies only to prompts under
-      `Grocery Store.Employee Area`, where through-the-wall use is a risk.
-    - A prompt in that area can opt out with the `IgnoreSight` attribute. The
-      journal, call plate and selector prompts set it too, so they stay safe if
-      the scope is widened.
+    - Camera.client forces `true` only on prompts under
+      `Grocery Store.Employee Area` (through-the-wall use is a risk there); a
+      prompt opts out with the `IgnoreSight` attribute (journal, call plate and
+      selector set it).
     - When a prompt's popup doesn't appear, raycast from the player's side to
       the prompt's part and see what it hits before blaming the script.
 - **Tools:**
@@ -398,9 +325,8 @@ rebuilt from transcript data.
     the server. Set Grip on the server.
   - For local-only motion (the reject shake), tween
     `RightHand.RightGrip.C1` instead.
-- **Sounds:** some asset IDs log "not trusted for this place" (9120839581 did).
-  Pro Sound Effects IDs (the cardboard sounds in StockingConfig) work. Check
-  the output after adding a sound.
+- **Sounds:** some asset IDs log "not trusted for this place". Pro Sound
+  Effects IDs work. Check the output after adding a sound.
 - **Picking a model's main part:** go by surface area, not volume. By volume
   you get kick plates and trim.
 - **Playtest testing:**
@@ -497,7 +423,7 @@ The server is authoritative. StockingClient only decides which Stock prompts
     before anything solid, because some slots face *into* their furniture.
   - Behind glass, the point goes just above the case.
 - Roblox doesn't draw Glass behind Glass, so `StockItems.create` swaps Glass
-  pieces for see-through plastic. Before this, the bottle vanished in the cases.
+  pieces for see-through plastic.
 
 | Tag | On | Attributes |
 | --- | --- | --- |
@@ -596,10 +522,8 @@ The server is authoritative. StockingClient only decides which Stock prompts
 - Scavenged tools carry `ScavengedLevel`. Loading one marks it `Stored`.
 - Any scavenged tool still held when the elevator leaves a floor is destroyed.
   Only cargo reaches the store.
-- The owner found Bounce/Elastic easing too bouncy. Use a single small rebound
-  (the `landing()` helper).
-- Look parts up by name, not `PrimaryPart`. Team Create once dropped 23
-  PrimaryPart refs.
+- Avoid Bounce/Elastic easing (too bouncy); use the `landing()` helper.
+- Look parts up by name, not `PrimaryPart` (Team Create drops those refs).
 
 ### Shop day (DayNightService / CustomerService / CounterService / QuotaService)
 
